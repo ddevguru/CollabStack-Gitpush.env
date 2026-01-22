@@ -8,11 +8,15 @@ export const getSocket = (): Socket | null => {
     const token = useAuthStore.getState().token;
     if (!token) return null;
 
-    socket = io('http://localhost:3000', {
+    // Use environment variable if available, otherwise use relative path
+    const apiBaseURL = import.meta.env.VITE_API_URL || window.location.origin;
+    const socketURL = apiBaseURL.replace('/api', '') || window.location.origin;
+
+    socket = io(socketURL, {
       auth: {
         token,
       },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
     });
 
     socket.on('connect', () => {

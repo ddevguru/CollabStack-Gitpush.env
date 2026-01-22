@@ -53,10 +53,13 @@ services:
     rootDir: frontend
     envVars:
       - key: VITE_API_URL
-        sync: false  # Set manually as: https://collaborative-ide-backend.onrender.com
-        # Note: Must be set before first build since Vite env vars are baked in
+        fromService:
+          name: collaborative-ide-backend
+          type: web
+          property: host
+        # Will be set to: https://collaborative-ide-backend.onrender.com
       - key: VITE_GITHUB_CLIENT_ID
-        sync: false  # Set manually
+        sync: false  # Set manually - Get from GitHub OAuth App
       - key: VITE_GOOGLE_CLIENT_ID
-        sync: false  # Set manually
+        sync: false  # Set manually - Get from Google Cloud Console
 
