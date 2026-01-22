@@ -106,7 +106,7 @@ export default function Dashboard() {
       return;
     }
     try {
-      await api.post('/projects', {
+      const response = await api.post('/projects', {
         name: projectName,
         description: projectDescription,
         projectType: projectType || undefined, // Auto-detect if not provided

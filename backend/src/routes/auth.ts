@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
 import { AuthRequest, authenticate } from '../middleware/auth.js';
 import { AuthController } from '../controllers/authController.js';
@@ -14,7 +14,7 @@ router.post(
     body('name').trim().isLength({ min: 1, max: 100 }),
     body('password').isLength({ min: 6 }),
   ],
-  async (req, res, next) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -33,7 +33,7 @@ router.post(
     body('email').isEmail().normalizeEmail(),
     body('password').notEmpty(),
   ],
-  async (req, res, next) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -46,7 +46,7 @@ router.post(
   }
 );
 
-router.get('/me', authenticate, async (req: AuthRequest, res, next) => {
+router.get('/me', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await authController.getMe(req, res, next);
   } catch (error) {

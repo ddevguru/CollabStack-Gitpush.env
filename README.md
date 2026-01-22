@@ -118,7 +118,8 @@ JUDGE0_API_KEY="your-judge0-api-key"
 
 **Frontend** (`frontend/.env`):
 ```env
-VITE_API_URL=http://localhost:3000
+# For development, leave VITE_API_URL unset (Vite proxy handles /api)
+# For production, set: VITE_API_URL=https://your-backend-url.onrender.com/api
 VITE_GITHUB_CLIENT_ID=your-github-client-id
 VITE_GOOGLE_CLIENT_ID=your-google-client-id
 ```

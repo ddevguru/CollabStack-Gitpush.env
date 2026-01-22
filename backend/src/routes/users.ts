@@ -1,11 +1,11 @@
-import { Router } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { UserController } from '../controllers/userController.js';
 import { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 const userController = new UserController();
 
-router.get('/me', async (req: AuthRequest, res, next) => {
+router.get('/me', async (req: AuthRequest, res: Response, next: NextFunction) => {
   await userController.getProfile(req, res, next);
 });
 

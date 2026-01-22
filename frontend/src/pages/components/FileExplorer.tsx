@@ -117,20 +117,6 @@ export default function FileExplorer({
     }
   };
 
-  const _handleDeleteFile = async (file: File) => {
-    if (!confirm(`Delete ${file.path}?`)) return;
-    try {
-      await api.delete(`/files/${projectId}/${file.id}`);
-      toast.success('File deleted');
-      if (selectedFile?.id === file.id) {
-        onFileSelect(files.find((f) => f.id !== file.id) || files[0]);
-      }
-      // Reload files
-      window.location.reload();
-    } catch (error: any) {
-      toast.error('Failed to delete file');
-    }
-  };
 
   const tree = buildTree();
 

@@ -51,7 +51,8 @@ services:
       dockerfile: Dockerfile
     container_name: collaborative-ide-frontend
     environment:
-      VITE_API_URL: http://localhost:3000
+      # Don't set VITE_API_URL in Docker - use relative path /api (Vite proxy handles it)
+      # VITE_API_URL: http://localhost:3000/api
       VITE_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
       VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
     ports:
