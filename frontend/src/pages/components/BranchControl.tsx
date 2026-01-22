@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { GitBranch, RefreshCw, Settings } from 'lucide-react';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -35,6 +35,7 @@ export default function BranchControl({ project }: { project: Project }) {
   const { user } = useAuthStore();
   const socket = getSocket();
   const isLeader = project.ownerTeam.leader.id === user?.id;
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Update state when project settings change
@@ -45,6 +46,23 @@ export default function BranchControl({ project }: { project: Project }) {
   useEffect(() => {
     checkGitHubConnection();
   }, []);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+        setShowSettings(false);
+      }
+    };
+
+    if (showMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showMenu]);
 
   const checkGitHubConnection = async () => {
     try {
@@ -112,25 +130,42 @@ export default function BranchControl({ project }: { project: Project }) {
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={menuRef}>
       <button
-        onClick={() => setShowMenu(!showMenu)}
-        className="flex items-center space-x-2 px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowMenu(!showMenu);
+        }}
+        className={`flex items-center space-x-2 px-3 py-1.5 text-sm rounded-lg transition-all ${
+          showMenu
+            ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+            : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
+        }`}
       >
         <GitBranch className="w-4 h-4" />
-        <span>Branches</span>
+        <span className="font-semibold">Branches</span>
       </button>
 
       {showMenu && (
-        <div className="absolute top-full mt-2 right-0 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
-          <div className="p-4">
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 z-[99]" 
+            onClick={() => {
+              setShowMenu(false);
+              setShowSettings(false);
+            }}
+          />
+          {/* Dropdown Menu */}
+          <div className="absolute top-full mt-2 right-0 w-80 bg-dark-surface/95 backdrop-blur-xl border-2 border-gray-700/50 rounded-xl shadow-2xl z-[100]">
+            <div className="p-4">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-gray-900 dark:text-white">Branches</h4>
+              <h4 className="font-bold text-white text-lg bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">Branches</h4>
               <div className="flex items-center gap-2">
                 {isLeader && (
                   <button
                     onClick={() => setShowSettings(!showSettings)}
-                    className="p-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                    className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-all"
                     title="Settings"
                   >
                     <Settings className="w-4 h-4" />
@@ -139,7 +174,7 @@ export default function BranchControl({ project }: { project: Project }) {
                 {project.githubRepoUrl && (
                   <button
                     onClick={handleSync}
-                    className="p-1 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                    className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-all"
                     title="Sync with GitHub"
                   >
                     <RefreshCw className="w-4 h-4" />
@@ -150,34 +185,50 @@ export default function BranchControl({ project }: { project: Project }) {
 
             {/* Settings Panel */}
             {showSettings && isLeader && (
-              <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-                <h5 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">GitHub Settings</h5>
-                <div className="space-y-2">
+              <div className="mb-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700/50">
+                <h5 className="text-sm font-bold text-white mb-3">GitHub Settings</h5>
+                <div className="space-y-3">
                   <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Auto Push</span>
+                    <span className="text-sm text-gray-300 font-medium">Auto Push</span>
                     <button
-                      onClick={() => setAutoPush(!autoPush)}
+                      onClick={async () => {
+                        const newAutoPush = !autoPush;
+                        setAutoPush(newAutoPush);
+                        // Save immediately
+                        try {
+                          await api.put(`/projects/${project.id}`, {
+                            settings: {
+                              ...project.settings,
+                              autoPush: newAutoPush,
+                            },
+                          });
+                          toast.success(`Auto push ${newAutoPush ? 'enabled' : 'disabled'}`);
+                        } catch (error: any) {
+                          toast.error('Failed to update auto push setting');
+                          setAutoPush(autoPush); // Revert on error
+                        }
+                      }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        autoPush ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
+                        autoPush ? 'bg-gradient-to-r from-collab-500 to-pink-500' : 'bg-gray-600'
                       }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-lg ${
                           autoPush ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
                     </button>
                   </label>
                   <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Auto Branching</span>
+                    <span className="text-sm text-gray-300 font-medium">Auto Branching</span>
                     <button
                       onClick={() => setAutoBranching(!autoBranching)}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        autoBranching ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
+                        autoBranching ? 'bg-gradient-to-r from-collab-500 to-pink-500' : 'bg-gray-600'
                       }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-lg ${
                           autoBranching ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
@@ -185,7 +236,7 @@ export default function BranchControl({ project }: { project: Project }) {
                   </label>
                   <button
                     onClick={handleUpdateSettings}
-                    className="w-full mt-2 px-3 py-1.5 text-xs bg-primary-600 text-white rounded hover:bg-primary-700"
+                    className="w-full mt-2 px-3 py-2 text-xs bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 transition-all font-semibold"
                   >
                     Save Settings
                   </button>
@@ -194,41 +245,48 @@ export default function BranchControl({ project }: { project: Project }) {
             )}
 
             <div className="space-y-2">
-              {project.branches.map((branch) => (
-                <div
-                  key={branch.id}
-                  className="flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                >
-                  <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">{branch.name}</div>
-                    {branch.lastSyncAt && (
-                      <div className="text-xs text-gray-500">
-                        Last sync: {new Date(branch.lastSyncAt).toLocaleString()}
-                      </div>
+              {project.branches.length === 0 ? (
+                <div className="text-center py-4 text-gray-400 text-sm">
+                  No branches found
+                </div>
+              ) : (
+                project.branches.map((branch) => (
+                  <div
+                    key={branch.id}
+                    className="flex items-center justify-between p-3 hover:bg-gray-700/50 rounded-lg border border-gray-700/50 transition-all"
+                  >
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-white">{branch.name}</div>
+                      {branch.lastSyncAt && (
+                        <div className="text-xs text-gray-400 mt-1">
+                          Last sync: {new Date(branch.lastSyncAt).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                    {project.githubRepoUrl && (
+                      <button
+                        onClick={() => handlePush(branch.name)}
+                        disabled={!isLeader && branch.name === 'main'}
+                        className="px-3 py-1.5 text-xs bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold"
+                      >
+                        Push
+                      </button>
                     )}
                   </div>
-                  {project.githubRepoUrl && (
-                    <button
-                      onClick={() => handlePush(branch.name)}
-                      disabled={!isLeader && branch.name === 'main'}
-                      className="px-2 py-1 text-xs bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Push
-                    </button>
-                  )}
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             {!githubConnected && (
-              <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded">
-                <p className="text-xs text-yellow-800 dark:text-yellow-200">
+              <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-700/50 rounded-lg">
+                <p className="text-xs text-yellow-300">
                   Connect GitHub in Settings to enable branch management
                 </p>
               </div>
             )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

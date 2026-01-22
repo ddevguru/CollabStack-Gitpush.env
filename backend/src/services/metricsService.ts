@@ -170,12 +170,12 @@ export class MetricsService {
       };
     }
 
-    const totalLines = metrics.reduce((sum, m) => sum + m.linesOfCode, 0);
-    const avgComplexity = metrics.reduce((sum, m) => sum + m.complexity, 0) / metrics.length;
-    const avgMaintainability = metrics.reduce((sum, m) => sum + m.maintainability, 0) / metrics.length;
-    const avgQuality = metrics.reduce((sum, m) => sum + m.codeQuality, 0) / metrics.length;
-    const totalIssues = metrics.reduce((sum, m) => {
-      const issues = m.issues as any[];
+    const totalLines = metrics.reduce((sum: number, m: { linesOfCode: number }) => sum + m.linesOfCode, 0);
+    const avgComplexity = metrics.reduce((sum: number, m: { complexity: number }) => sum + m.complexity, 0) / metrics.length;
+    const avgMaintainability = metrics.reduce((sum: number, m: { maintainability: number }) => sum + m.maintainability, 0) / metrics.length;
+    const avgQuality = metrics.reduce((sum: number, m: { codeQuality: number }) => sum + m.codeQuality, 0) / metrics.length;
+    const totalIssues = metrics.reduce((sum: number, m: { issues: unknown }) => {
+      const issues = m.issues as unknown[];
       return sum + (issues?.length || 0);
     }, 0);
 

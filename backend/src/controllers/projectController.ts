@@ -22,6 +22,8 @@ export class ProjectController {
         visibility = 'PRIVATE',
         ownerTeamId,
         settings = {},
+        createGitHubRepo = false,
+        githubRepoPrivate = true,
       } = req.body;
 
       if (!name || !ownerTeamId) {
@@ -106,9 +108,51 @@ export class ProjectController {
         }
       }
 
+      // Auto-create GitHub repo if requested
+      let githubRepo = null;
+      if (createGitHubRepo) {
+        try {
+          // Get team leader with GitHub token
+          const teamWithLeader = await prisma.team.findUnique({
+            where: { id: ownerTeamId },
+            include: {
+              leader: true,
+            },
+          });
+
+          if (teamWithLeader?.leader.githubToken) {
+            const { GitHubService } = await import('../services/githubService.js');
+            const githubService = new GitHubService();
+            
+            const repoName = name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+            const repo = await githubService.createRepository(
+              teamWithLeader.leader.githubToken,
+              repoName,
+              description || '',
+              githubRepoPrivate
+            );
+
+            // Update project with repo info
+            await prisma.project.update({
+              where: { id: project.id },
+              data: {
+                githubRepoName: repo.name,
+                githubRepoUrl: repo.html_url,
+                githubRepoId: repo.id.toString(),
+              },
+            });
+
+            githubRepo = repo;
+          }
+        } catch (error) {
+          console.error('Failed to create GitHub repo:', error);
+          // Continue even if repo creation fails
+        }
+      }
+
       res.status(201).json({
         success: true,
-        data: { project, projectType: detectedType },
+        data: { project, projectType: detectedType, githubRepo },
       });
     } catch (error) {
       next(error);

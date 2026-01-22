@@ -54,7 +54,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response, next: Ne
   }
 });
 
-router.post('/github/callback', async (req, res, next) => {
+router.post('/github/callback', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await authController.githubCallback(req, res, next);
   } catch (error) {
@@ -62,7 +62,7 @@ router.post('/github/callback', async (req, res, next) => {
   }
 });
 
-router.post('/google/callback', async (req, res, next) => {
+router.post('/google/callback', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await authController.googleCallback(req, res, next);
   } catch (error) {

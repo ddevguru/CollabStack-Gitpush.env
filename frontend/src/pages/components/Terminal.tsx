@@ -97,15 +97,19 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
 
   const addOutput = (text: string, type: 'output' | 'error' | 'info' | 'prompt' = 'output') => {
     const newRun: Run = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random()}`,
       language,
       code: '',
-      status: 'SUCCESS',
-      output: type === 'output' ? text : undefined,
+      status: type === 'error' ? 'ERROR' : type === 'info' ? 'INFO' : 'SUCCESS',
+      output: type === 'output' || type === 'info' || type === 'prompt' ? text : undefined,
       error: type === 'error' ? text : undefined,
       createdAt: new Date().toISOString(),
     };
     setRuns((prev) => [...prev, newRun]);
+    // Auto scroll to bottom
+    setTimeout(() => {
+      outputEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 10);
   };
 
   const handleCommand = async (command: string) => {
@@ -308,17 +312,19 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#1e1e1e] text-[#d4d4d4] font-mono text-sm">
+    <div className="flex flex-col h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-200 font-mono text-sm">
       {/* Terminal Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#2d2d2d] border-b border-[#3e3e3e]">
+      <div className="flex items-center justify-between px-4 py-3 bg-dark-surface/95 backdrop-blur-xl border-b border-gray-700/50 shadow-lg">
         <div className="flex items-center space-x-3">
-          <TerminalIcon className="w-4 h-4 text-[#858585]" />
-          <span className="text-[#858585] text-xs">TERMINAL</span>
-          <div className="h-4 w-px bg-[#3e3e3e]" />
+          <TerminalIcon className="w-5 h-5 text-collab-400" />
+          <span className="text-gray-300 text-xs font-semibold bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">
+            TERMINAL
+          </span>
+          <div className="h-4 w-px bg-gray-700/50" />
           <select
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
-            className="px-2 py-1 bg-[#1e1e1e] text-[#d4d4d4] border border-[#3e3e3e] rounded text-xs focus:outline-none focus:border-[#007acc]"
+            className="px-3 py-1.5 bg-gray-800/50 text-gray-200 border border-gray-700/50 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-transparent transition-all"
           >
             <option value="javascript">JavaScript</option>
             <option value="typescript">TypeScript</option>
@@ -342,21 +348,21 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
         <div className="flex items-center space-x-2">
           <button
             onClick={copyOutput}
-            className="p-1.5 hover:bg-[#3e3e3e] rounded text-[#858585] hover:text-[#d4d4d4]"
+            className="p-2 hover:bg-gray-700/50 rounded-lg text-gray-400 hover:text-white transition-all"
             title="Copy Output"
           >
             <Copy className="w-4 h-4" />
           </button>
           <button
             onClick={clearTerminal}
-            className="p-1.5 hover:bg-[#3e3e3e] rounded text-[#858585] hover:text-[#d4d4d4]"
+            className="p-2 hover:bg-gray-700/50 rounded-lg text-gray-400 hover:text-red-400 transition-all"
             title="Clear Terminal"
           >
             <Trash2 className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowCodeEditor(!showCodeEditor)}
-            className="px-2 py-1 text-xs bg-[#007acc] text-white rounded hover:bg-[#005a9e]"
+            className="px-3 py-1.5 text-xs bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 transition-all font-semibold"
           >
             {showCodeEditor ? 'Hide Editor' : 'Show Editor'}
           </button>
@@ -366,43 +372,50 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
       {/* Terminal Output */}
       <div
         ref={terminalRef}
-        className="flex-1 overflow-y-auto p-4 space-y-1 font-mono text-sm"
+        className="flex-1 overflow-y-auto p-4 space-y-1 font-mono text-sm bg-gray-900/50"
         style={{ fontFamily: 'Consolas, "Courier New", monospace' }}
       >
         {runs.length === 0 && (
-          <div className="text-[#858585]">
-            <div>CodeCompute Hub Terminal v1.0.0</div>
+          <div className="text-gray-400">
+            <div className="text-collab-400 font-semibold mb-2">CodeCompute Hub Terminal v1.0.0</div>
             <div>Type 'help' for available commands.</div>
-            <div className="mt-2">{getPrompt()}</div>
+            <div className="mt-2 text-gray-300">{getPrompt()}</div>
           </div>
         )}
         {runs.map((run, index) => (
-          <div key={run.id} className="whitespace-pre-wrap">
+          <div key={`${run.id}-${index}`} className="whitespace-pre-wrap break-words">
             {run.output && (
-              <div className="text-[#d4d4d4]">{run.output}</div>
+              <div className="text-gray-200">{run.output}</div>
             )}
             {run.error && (
-              <div className="text-[#f48771]">{run.error}</div>
+              <div className="text-red-400 font-semibold">{run.error}</div>
             )}
-            {!run.output && !run.error && index === runs.length - 1 && (
-              <div className="text-[#858585]">{getPrompt()}</div>
+            {!run.output && !run.error && run.status && (
+              <div className={`text-xs ${
+                run.status === 'SUCCESS' ? 'text-green-400' :
+                run.status === 'ERROR' ? 'text-red-400' :
+                'text-yellow-400'
+              }`}>
+                [{run.status}]
+              </div>
             )}
           </div>
         ))}
+        <div className="text-gray-300 mt-2 font-semibold">{getPrompt()}</div>
         <div ref={outputEndRef} />
       </div>
 
       {/* Command Input */}
-      <div className="border-t border-[#3e3e3e] bg-[#252526] px-4 py-2">
+      <div className="border-t border-gray-700/50 bg-gray-800/50 backdrop-blur-xl px-4 py-3">
         <div className="flex items-center">
-          <span className="text-[#858585] mr-2">{getPrompt()}</span>
+          <span className="text-collab-400 mr-2 font-semibold">{getPrompt()}</span>
           <input
             ref={inputRef}
             type="text"
             value={currentCommand}
             onChange={(e) => setCurrentCommand(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent text-[#d4d4d4] outline-none"
+            className="flex-1 bg-transparent text-gray-200 outline-none placeholder-gray-500"
             placeholder="Enter command..."
             autoFocus
           />
@@ -411,13 +424,13 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
 
       {/* Code Editor Section */}
       {showCodeEditor && (
-        <div className="border-t border-[#3e3e3e] bg-[#1e1e1e]">
-          <div className="flex items-center justify-between px-4 py-2 bg-[#2d2d2d] border-b border-[#3e3e3e]">
-            <span className="text-xs text-[#858585]">CODE EDITOR</span>
+        <div className="border-t border-gray-700/50 bg-gray-900/50 backdrop-blur-xl">
+          <div className="flex items-center justify-between px-4 py-3 bg-gray-800/50 border-b border-gray-700/50">
+            <span className="text-xs text-gray-400 font-semibold">CODE EDITOR</span>
             <button
               onClick={handleRun}
               disabled={isRunning || !code.trim()}
-              className="px-3 py-1 text-xs bg-[#007acc] text-white rounded hover:bg-[#005a9e] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              className="px-4 py-2 text-xs bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all font-semibold"
             >
               {isRunning ? (
                 <>
@@ -438,20 +451,20 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
               <div className="flex gap-2">
                 <button
                   onClick={() => setResourceType('CPU')}
-                  className={`px-2 py-1 text-xs rounded ${
+                  className={`px-3 py-1.5 text-xs rounded-lg transition-all ${
                     resourceType === 'CPU'
-                      ? 'bg-[#007acc] text-white'
-                      : 'bg-[#2d2d2d] text-[#858585] hover:bg-[#3e3e3e]'
+                      ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                      : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50 border border-gray-700/50'
                   }`}
                 >
                   CPU (Free)
                 </button>
                 <button
                   onClick={() => setResourceType('GPU')}
-                  className={`px-2 py-1 text-xs rounded ${
+                  className={`px-3 py-1.5 text-xs rounded-lg transition-all ${
                     resourceType === 'GPU'
-                      ? 'bg-[#007acc] text-white'
-                      : 'bg-[#2d2d2d] text-[#858585] hover:bg-[#3e3e3e]'
+                      ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                      : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50 border border-gray-700/50'
                   }`}
                 >
                   GPU (Credits)
@@ -459,21 +472,21 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
               </div>
             </div>
             <div>
-              <label className="text-xs text-[#858585] mb-1 block">Input (stdin):</label>
+              <label className="text-xs text-gray-400 mb-2 block font-semibold">Input (stdin):</label>
               <textarea
                 value={stdin}
                 onChange={(e) => setStdin(e.target.value)}
-                className="w-full px-2 py-1 bg-[#252526] text-[#d4d4d4] border border-[#3e3e3e] rounded font-mono text-xs focus:outline-none focus:border-[#007acc]"
+                className="w-full px-3 py-2 bg-gray-800/50 text-gray-200 border border-gray-700/50 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-transparent transition-all"
                 rows={2}
                 placeholder="Enter input..."
               />
             </div>
             <div>
-              <label className="text-xs text-[#858585] mb-1 block">Code:</label>
+              <label className="text-xs text-gray-400 mb-2 block font-semibold">Code:</label>
               <textarea
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                className="w-full px-2 py-1 bg-[#252526] text-[#d4d4d4] border border-[#3e3e3e] rounded font-mono text-xs focus:outline-none focus:border-[#007acc]"
+                className="w-full px-3 py-2 bg-gray-800/50 text-gray-200 border border-gray-700/50 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-transparent transition-all"
                 rows={8}
                 placeholder={`Write your ${language} code here...`}
               />

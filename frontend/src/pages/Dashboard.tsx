@@ -3,7 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { Plus, Settings, LogOut, Users, UserPlus, X } from 'lucide-react';
+import { Plus, Settings, LogOut, Users, UserPlus, X, Github, FolderKanban, Code2, Video, Calendar as CalendarIcon } from 'lucide-react';
+import { PageLayout } from '@/components/nexus/PageLayout';
+import { GoogleMeetScheduler } from '@/components/nexus/GoogleMeetScheduler';
+import { Calendar } from '@/components/nexus/Calendar';
 
 interface Team {
   id: string;
@@ -62,10 +65,26 @@ export default function Dashboard() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [showManageTeam, setShowManageTeam] = useState(false);
   const [memberEmail, setMemberEmail] = useState('');
+  const [createGitHubRepo, setCreateGitHubRepo] = useState(false);
+  const [githubRepoPrivate, setGithubRepoPrivate] = useState(true);
+  const [githubConnected, setGithubConnected] = useState(false);
+  const [showMeetScheduler, setShowMeetScheduler] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
 
   useEffect(() => {
     loadData();
+    checkGitHubConnection();
   }, []);
+
+  const checkGitHubConnection = async () => {
+    try {
+      const response = await api.get('/users/me');
+      const userData = response.data.data.user;
+      setGithubConnected(!!userData.githubUsername);
+    } catch (error) {
+      // Ignore
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -105,6 +124,13 @@ export default function Dashboard() {
       toast.error('Please select a team');
       return;
     }
+
+    // Check if user wants to create GitHub repo but is not connected
+    if (createGitHubRepo && !githubConnected) {
+      toast.error('Please connect your GitHub account first in Settings');
+      return;
+    }
+
     try {
       const response = await api.post('/projects', {
         name: projectName,
@@ -113,13 +139,25 @@ export default function Dashboard() {
         ownerTeamId: selectedTeamId,
         languages: [],
         visibility: 'PRIVATE',
+        createGitHubRepo,
+        githubRepoPrivate,
       });
-      toast.success('Project created successfully');
+      
+      if (createGitHubRepo && response.data.data.githubRepo) {
+        toast.success('Project and GitHub repository created successfully!');
+      } else if (createGitHubRepo) {
+        toast.success('Project created, but GitHub repo creation failed. You can create it later.');
+      } else {
+        toast.success('Project created successfully');
+      }
+      
       setShowCreateProject(false);
       setProjectName('');
       setProjectDescription('');
       setProjectType('');
       setSelectedTeamId('');
+      setCreateGitHubRepo(false);
+      setGithubRepoPrivate(true);
       navigate(`/project/${response.data.data.project.id}`);
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Failed to create project');
@@ -201,36 +239,47 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <nav className="bg-white dark:bg-gray-800 shadow">
+    <PageLayout>
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-dark-surface/95 backdrop-blur-xl border-b-2 border-gray-700/50 shadow-2xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Collaborative IDE</h1>
+          <div className="flex justify-between h-20">
+            <div className="flex items-center gap-3">
+              <Code2 className="w-8 h-8 text-collab-400" />
+              <span className="text-2xl font-black text-white">
+                Collab<span className="bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">Stack</span>
+              </span>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-gray-700 dark:text-gray-300">{user?.name}</span>
+              <span className="text-gray-300">{user?.name}</span>
+              <button
+                onClick={() => setShowMeetScheduler(true)}
+                className="px-4 py-2 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 transition-all flex items-center gap-2"
+              >
+                <Video className="w-4 h-4" />
+                Meet
+              </button>
+              <button
+                onClick={() => setShowCalendar(true)}
+                className="px-4 py-2 bg-gray-800/50 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+              >
+                <CalendarIcon className="w-4 h-4" />
+                Calendar
+              </button>
               <Link
                 to="/compute"
-                className="px-3 py-1 text-sm bg-green-600 text-white rounded-md hover:bg-green-700"
+                className="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
               >
                 Compute
               </Link>
               <Link
-                to="/payment"
-                className="px-3 py-1 text-sm bg-primary-600 text-white rounded-md hover:bg-primary-700"
-              >
-                Upgrade
-              </Link>
-              <Link
                 to="/settings"
-                className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                className="p-2 text-gray-400 hover:text-white transition-colors"
               >
                 <Settings className="w-5 h-5" />
               </Link>
               <button
                 onClick={handleLogout}
-                className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                className="p-2 text-gray-400 hover:text-white transition-colors"
               >
                 <LogOut className="w-5 h-5" />
               </button>
@@ -239,16 +288,16 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-32">
         {/* Tabs */}
-        <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="mb-6 border-b border-gray-700/50">
           <nav className="flex space-x-8">
             <button
               onClick={() => setShowTeams(false)}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 !showTeams
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400'
+                  ? 'border-collab-400 text-collab-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-300'
               }`}
             >
               Projects
@@ -258,10 +307,10 @@ export default function Dashboard() {
                 setShowTeams(true);
                 loadData();
               }}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 showTeams
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400'
+                  ? 'border-collab-400 text-collab-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-300'
               }`}
             >
               Teams
@@ -270,7 +319,7 @@ export default function Dashboard() {
         </div>
 
         <div className="mb-8 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h2 className="text-3xl font-black bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">
             {showTeams ? 'My Teams' : 'My Projects'}
           </h2>
           <div className="space-x-2">
@@ -292,9 +341,9 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={() => setShowCreateProject(true)}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center gap-2"
+                  className="px-6 py-3 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-xl hover:shadow-lg hover:shadow-collab-500/50 transition-all flex items-center gap-2 font-semibold"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-5 h-5" />
                   New Project
                 </button>
               </>
@@ -305,22 +354,24 @@ export default function Dashboard() {
         {showTeams ? (
           teams.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-500 dark:text-gray-400">No teams yet. Create one to get started!</p>
+              <Users className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+              <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">No teams yet</p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm">Create a team to start collaborating!</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {teams.map((team) => (
                 <div
                   key={team.id}
-                  className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
+                  className="bg-dark-surface/90 backdrop-blur-xl border-2 border-gray-700/50 rounded-xl shadow-lg hover:shadow-2xl hover:border-collab-500/50 transition-all duration-200 p-6 h-full flex flex-col"
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">{team.name}</h3>
+                      <h3 className="text-lg font-bold text-white mb-1">{team.name}</h3>
                       {team.description && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{team.description}</p>
+                        <p className="text-sm text-gray-400 mb-2">{team.description}</p>
                       )}
-                      <p className="text-xs text-gray-500 dark:text-gray-500">
+                      <p className="text-xs text-gray-500">
                         Leader: {team.leader.name} ({team.leader.email})
                       </p>
                     </div>
@@ -338,9 +389,9 @@ export default function Dashboard() {
                       </button>
                     )}
                   </div>
-                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="mt-4 pt-4 border-t border-gray-700/50">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600 dark:text-gray-400">
+                      <span className="text-gray-400">
                         <Users className="w-4 h-4 inline mr-1" />
                         {team.members?.length || 0} members
                       </span>
@@ -351,7 +402,7 @@ export default function Dashboard() {
                             loadTeamDetails(team.id);
                             setShowManageTeam(true);
                           }}
-                          className="text-primary-600 hover:text-primary-700 dark:text-primary-400"
+                          className="text-collab-400 hover:text-collab-300"
                         >
                           Manage
                         </button>
@@ -364,7 +415,9 @@ export default function Dashboard() {
           )
         ) : projects.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400">No projects yet. Create one to get started!</p>
+            <FolderKanban className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+            <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">No projects yet</p>
+            <p className="text-gray-400 dark:text-gray-500 text-sm">Create your first project to get started!</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -372,18 +425,40 @@ export default function Dashboard() {
               <Link
                 key={project.id}
                 to={`/project/${project.id}`}
-                className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
+                className="bg-dark-surface/90 backdrop-blur-xl border-2 border-gray-700/50 rounded-xl shadow-lg hover:shadow-2xl hover:border-collab-500/50 transition-all duration-200 p-6 h-full flex flex-col"
               >
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{project.name}</h3>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Code2 className="w-5 h-5 text-collab-400" />
+                    <h3 className="text-lg font-bold text-white">{project.name}</h3>
+                  </div>
+                </div>
                 {project.description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{project.description}</p>
+                  <p className="text-sm text-gray-400 mb-4 line-clamp-2">{project.description}</p>
                 )}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500 dark:text-gray-500">{project.ownerTeam.name}</span>
-                  <span className="text-xs text-gray-500 dark:text-gray-500">
+                <div className="flex items-center justify-between pt-4 border-t border-gray-700/50">
+                  <span className="text-xs font-medium text-gray-400">{project.ownerTeam.name}</span>
+                  <span className="text-xs text-gray-500">
                     {new Date(project.createdAt).toLocaleDateString()}
                   </span>
                 </div>
+                {project.languages && project.languages.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {project.languages.slice(0, 3).map((lang, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 text-xs bg-collab-500/20 text-collab-300 rounded"
+                      >
+                        {lang}
+                      </span>
+                    ))}
+                    {project.languages.length > 3 && (
+                      <span className="px-2 py-0.5 text-xs text-gray-500">
+                        +{project.languages.length - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
               </Link>
             ))}
           </div>
@@ -392,28 +467,38 @@ export default function Dashboard() {
 
       {/* Create Team Modal */}
       {showCreateTeam && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Create Team</h3>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-surface/95 backdrop-blur-xl border-2 border-gray-700/50 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">Create Team</h3>
+              <button
+                onClick={() => setShowCreateTeam(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
             <form onSubmit={handleCreateTeam}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Team Name</label>
+                  <label className="block text-sm font-semibold mb-2 text-gray-300">Team Name</label>
                   <input
                     type="text"
                     required
                     value={teamName}
                     onChange={(e) => setTeamName(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-collab-500"
+                    placeholder="Enter team name"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                  <label className="block text-sm font-semibold mb-2 text-gray-300">Description</label>
                   <textarea
                     value={teamDescription}
                     onChange={(e) => setTeamDescription(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-collab-500"
                     rows={3}
+                    placeholder="Team description (optional)"
                   />
                 </div>
               </div>
@@ -421,15 +506,15 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setShowCreateTeam(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  className="px-6 py-2 border border-gray-700 rounded-lg text-gray-300 hover:bg-gray-800 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                  className="px-6 py-2 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 transition-all font-semibold"
                 >
-                  Create
+                  Create Team
                 </button>
               </div>
             </form>
@@ -439,40 +524,49 @@ export default function Dashboard() {
 
       {/* Create Project Modal */}
       {showCreateProject && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Create Project</h3>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-surface/95 backdrop-blur-xl border-2 border-gray-700/50 rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">Create Project</h3>
+              <button
+                onClick={() => setShowCreateProject(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
             <form onSubmit={handleCreateProject}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Project Name</label>
+                  <label className="block text-sm font-semibold mb-2 text-gray-300">Project Name</label>
                   <input
                     type="text"
                     required
                     value={projectName}
                     onChange={(e) => setProjectName(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-collab-500"
+                    placeholder="Enter project name"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                  <label className="block text-sm font-semibold mb-2 text-gray-300">Description</label>
                   <textarea
                     value={projectDescription}
                     onChange={(e) => setProjectDescription(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-collab-500"
                     rows={3}
                     placeholder="e.g., React web app, Flutter mobile app, Node.js backend..."
                   />
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mt-1 text-xs text-gray-500">
                     Tip: Mention project type (React, Flutter, Android, etc.) to auto-generate folder structure
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Project Type (Optional)</label>
+                  <label className="block text-sm font-semibold mb-2 text-gray-300">Project Type (Optional)</label>
                   <select
                     value={projectType}
                     onChange={(e) => setProjectType(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-collab-500"
                   >
                     <option value="">Auto-detect from description</option>
                     <option value="react">React</option>
@@ -493,12 +587,12 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Team</label>
+                  <label className="block text-sm font-semibold mb-2 text-gray-300">Team</label>
                   <select
                     required
                     value={selectedTeamId}
                     onChange={(e) => setSelectedTeamId(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-collab-500"
                   >
                     <option value="">Select a team</option>
                     {teams.map((team) => (
@@ -508,20 +602,69 @@ export default function Dashboard() {
                     ))}
                   </select>
                 </div>
+                
+                {/* GitHub Repository Creation */}
+                <div className="border-t border-gray-700/50 pt-4">
+                  <div className="flex items-start space-x-3">
+                    <input
+                      type="checkbox"
+                      id="createGitHubRepo"
+                      checked={createGitHubRepo}
+                      onChange={(e) => setCreateGitHubRepo(e.target.checked)}
+                      disabled={!githubConnected}
+                      className="mt-1 h-4 w-4 text-collab-500 focus:ring-collab-500 border-gray-700 rounded"
+                    />
+                    <div className="flex-1">
+                      <label htmlFor="createGitHubRepo" className="block text-sm font-semibold text-gray-300">
+                        <div className="flex items-center gap-2">
+                          <Github className="w-4 h-4" />
+                          Create GitHub Repository
+                        </div>
+                      </label>
+                      {!githubConnected && (
+                        <p className="mt-1 text-xs text-amber-400">
+                          Connect your GitHub account in Settings first
+                        </p>
+                      )}
+                      {createGitHubRepo && githubConnected && (
+                        <div className="mt-2 space-y-2">
+                          <label className="flex items-center space-x-2 text-sm text-gray-400">
+                            <input
+                              type="radio"
+                              checked={githubRepoPrivate}
+                              onChange={() => setGithubRepoPrivate(true)}
+                              className="h-3 w-3 text-collab-500"
+                            />
+                            <span>Private Repository</span>
+                          </label>
+                          <label className="flex items-center space-x-2 text-sm text-gray-400">
+                            <input
+                              type="radio"
+                              checked={!githubRepoPrivate}
+                              onChange={() => setGithubRepoPrivate(false)}
+                              className="h-3 w-3 text-collab-500"
+                            />
+                            <span>Public Repository</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="mt-6 flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setShowCreateProject(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  className="px-6 py-2 border border-gray-700 rounded-lg text-gray-300 hover:bg-gray-800 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                  className="px-6 py-2 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 transition-all font-semibold"
                 >
-                  Create
+                  Create Project
                 </button>
               </div>
             </form>
@@ -698,7 +841,35 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-    </div>
+
+      {/* Google Meet Scheduler Modal */}
+      {showMeetScheduler && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <GoogleMeetScheduler
+              onClose={() => setShowMeetScheduler(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Modal */}
+      {showCalendar && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <Calendar />
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setShowCalendar(false)}
+                className="px-6 py-2 bg-gray-800/50 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </PageLayout>
   );
 }
 

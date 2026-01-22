@@ -211,7 +211,6 @@ export const Landing = () => {
               >
                 <Sparkles className="w-5 h-5 text-collab-400" />
               </motion.div>
-              <span className="text-base font-semibold text-white">Hackathon Winner 2024</span>
             </motion.div>
 
             {/* Main Heading */}

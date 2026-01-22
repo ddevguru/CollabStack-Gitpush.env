@@ -202,9 +202,9 @@ export class DriveService {
       await archive.finalize();
 
       // Wait for zip to be written
-      await new Promise((resolve, reject) => {
-        output.on('close', resolve);
-        output.on('error', reject);
+      await new Promise<void>((resolve, reject) => {
+        output.on('close', () => resolve());
+        output.on('error', (err: Error) => reject(err));
       });
 
       // Upload zip to Drive

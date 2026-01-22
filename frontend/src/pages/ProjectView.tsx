@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { motion } from 'framer-motion';
 import api from '@/services/api';
 import { getSocket } from '@/services/socket';
 import toast from 'react-hot-toast';
 import MonacoEditor from './components/MonacoEditor';
 import FileExplorer from './components/FileExplorer';
 import ChatPanel from './components/ChatPanel';
+import AIChat from './components/AIChat';
 import Terminal from './components/Terminal';
 import BranchControl from './components/BranchControl';
 import PlatformExecution from './components/PlatformExecution';
 import CodeMetrics from './components/CodeMetrics';
 import RunButton from './components/RunButton';
-import { ArrowLeft, Users, BarChart3 } from 'lucide-react';
+import ExtensionsPanel from './components/ExtensionsPanel';
+import UserPresencePanel from './components/UserPresencePanel';
+import { Calendar } from '@/components/nexus/Calendar';
+import { ArrowLeft, BarChart3, Bot, Package, Calendar as CalendarIcon, X, Code2 } from 'lucide-react';
 
 interface Project {
   id: string;
@@ -56,9 +61,11 @@ export default function ProjectView() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [showChat, setShowChat] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showMetrics, setShowMetrics] = useState(false);
-  const [activeUsers, setActiveUsers] = useState<any[]>([]);
+  const [showExtensions, setShowExtensions] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [currentCode, setCurrentCode] = useState<string>('');
   const [autoPushTimer, setAutoPushTimer] = useState<NodeJS.Timeout | null>(null);
 
@@ -73,16 +80,16 @@ export default function ProjectView() {
         const projectId = id || project.id;
         socket.emit('room:join', { projectId, roomId: project.roomId });
 
-        socket.on('room:users', (data: { users: any[] }) => {
-          setActiveUsers(data.users);
+        socket.on('room:users', (_data: { users: any[] }) => {
+          // Users are handled by UserPresencePanel
         });
 
         socket.on('user:joined', (data: { userId: string; userName: string }) => {
           toast.success(`${data.userName} joined the room`);
         });
 
-        socket.on('user:left', (data: { userId: string }) => {
-          setActiveUsers((prev) => prev.filter((u) => u.userId !== data.userId));
+        socket.on('user:left', (_data: { userId: string }) => {
+          // User presence is handled by UserPresencePanel
         });
 
         socket.on('file:opened', (_data: { userId: string; filePath: string }) => {
@@ -91,7 +98,6 @@ export default function ProjectView() {
 
         socket.on('edit', (_data) => {
           // Handle remote edit
-          // This would be handled by Monaco Editor's collaboration plugin
         });
 
         return () => {
@@ -149,17 +155,14 @@ export default function ProjectView() {
         content,
       });
       
-      // Clear existing timer
       if (autoPushTimer) {
         clearTimeout(autoPushTimer);
       }
 
-      // If auto-push is enabled, set up timer for 2 seconds
       const settings = project.settings as any;
       if (settings?.autoPush && project.githubRepoName) {
         const timer = setTimeout(async () => {
           try {
-            // Get current branch (default to main)
             const mainBranch = project.branches.find(b => b.name === 'main');
             const currentBranch = mainBranch?.gitBranchName || 'main';
             
@@ -168,9 +171,7 @@ export default function ProjectView() {
               commitMessage: `Auto-save: ${new Date().toLocaleString()}`,
             });
             console.log('Auto-push successful');
-            // Don't show toast for auto-push to avoid spam
           } catch (error: any) {
-            // Log error but don't show toast to avoid spam
             console.error('Auto-push failed:', error.response?.data || error.message);
           }
         }, 2000);
@@ -183,7 +184,6 @@ export default function ProjectView() {
     }
   };
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (autoPushTimer) {
@@ -194,8 +194,8 @@ export default function ProjectView() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-collab-400"></div>
       </div>
     );
   }
@@ -205,20 +205,26 @@ export default function ProjectView() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden">
       {/* Sidebar */}
-      <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+      <motion.div
+        initial={{ x: -300 }}
+        animate={{ x: 0 }}
+        className="w-64 bg-dark-surface/95 backdrop-blur-xl border-r border-gray-700/50 flex flex-col"
+      >
+        <div className="p-4 border-b border-gray-700/50">
           <div className="flex items-center justify-between mb-2">
             <button
               onClick={() => navigate('/dashboard')}
-              className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              className="text-gray-400 hover:text-white transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white truncate">{project.name}</h2>
+            <h2 className="text-lg font-bold text-white truncate bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">
+              {project.name}
+            </h2>
           </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{project.ownerTeam.name}</p>
+          <p className="text-sm text-gray-400 truncate">{project.ownerTeam.name}</p>
         </div>
 
         <FileExplorer
@@ -226,72 +232,95 @@ export default function ProjectView() {
           selectedFile={selectedFile}
           onFileSelect={handleFileSelect}
           projectId={project.id}
+          onFilesChange={loadProject}
         />
 
-        <div className="mt-auto p-4 border-t border-gray-200 dark:border-gray-700">
-          <div className="flex items-center space-x-2 mb-2">
-            <Users className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Active Users</span>
-          </div>
-          <div className="space-y-1">
-            {activeUsers.map((activeUser) => (
-              <div
-                key={activeUser.userId}
-                className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400"
-              >
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    backgroundColor: `hsl(${activeUser.userId.charCodeAt(0) * 137.508}, 70%, 50%)`,
-                  }}
-                />
-                <span>{activeUser.userName}</span>
-              </div>
-            ))}
-          </div>
+        <div className="mt-auto p-4 border-t border-gray-700/50">
+          <UserPresencePanel projectId={project.id} roomId={project.roomId} />
         </div>
-      </div>
+      </motion.div>
 
       {/* Main Editor Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Toolbar */}
-        <div className="h-12 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4">
-          <div className="flex items-center space-x-4">
+        <div className="h-14 bg-dark-surface/95 backdrop-blur-xl border-b border-gray-700/50 flex items-center justify-between px-4 flex-shrink-0 relative z-50">
+          <div className="flex items-center space-x-4 min-w-0">
             {selectedFile && (
               <>
-                <span className="text-sm text-gray-700 dark:text-gray-300">{selectedFile.path}</span>
+                <span className="text-sm text-gray-300 truncate max-w-xs" title={selectedFile.path}>
+                  {selectedFile.path}
+                </span>
                 <RunButton file={selectedFile} projectId={project.id} />
               </>
             )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-shrink-0 relative z-50">
             <BranchControl project={project} />
             <button
-              onClick={() => setShowChat(!showChat)}
-              className={`px-3 py-1 text-sm rounded ${
+              onClick={() => {
+                setShowAIChat(!showAIChat);
+                setShowChat(false);
+              }}
+              className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-all ${
+                showAIChat
+                  ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
+              }`}
+            >
+              <Bot className="w-4 h-4" />
+              AI
+            </button>
+            <button
+              onClick={() => {
+                setShowChat(!showChat);
+                setShowAIChat(false);
+              }}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
                 showChat
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
               }`}
             >
               Chat
             </button>
             <button
               onClick={() => setShowTerminal(!showTerminal)}
-              className={`px-3 py-1 text-sm rounded ${
+              className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
                 showTerminal
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
               }`}
             >
               Terminal
             </button>
             <button
+              onClick={() => setShowExtensions(!showExtensions)}
+              className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-all ${
+                showExtensions
+                  ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              Extensions
+            </button>
+            <button
+              onClick={() => setShowCalendar(!showCalendar)}
+              className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-all ${
+                showCalendar
+                  ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
+              }`}
+            >
+              <CalendarIcon className="w-4 h-4" />
+              Calendar
+            </button>
+            <button
               onClick={() => setShowMetrics(!showMetrics)}
-              className={`px-3 py-1 text-sm rounded flex items-center gap-1 ${
+              className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-all ${
                 showMetrics
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
               }`}
             >
               <BarChart3 className="w-4 h-4" />
@@ -302,7 +331,7 @@ export default function ProjectView() {
 
         {/* Platform Execution */}
         {selectedFile && project.projectType && !selectedFile.isDirectory && (
-          <div className="px-4 pt-2">
+          <div className="px-4 pt-2 flex-shrink-0">
             <PlatformExecution
               projectId={project.id}
               projectType={project.projectType}
@@ -313,7 +342,7 @@ export default function ProjectView() {
         )}
 
         {/* Editor */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-0">
           {selectedFile ? (
             <MonacoEditor
               file={selectedFile}
@@ -323,37 +352,92 @@ export default function ProjectView() {
               roomId={project.roomId}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-              Select a file to start editing
+            <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="text-center">
+                <Code2 className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <p>Select a file to start editing</p>
+              </div>
             </div>
           )}
         </div>
 
         {/* Terminal */}
         {showTerminal && (
-          <div className="h-64 border-t border-gray-200 dark:border-gray-700">
+          <div className="h-64 border-t border-gray-700/50 flex-shrink-0">
             <Terminal projectId={project.id} roomId={project.roomId} />
           </div>
         )}
       </div>
 
+      {/* AI Chat Panel */}
+      {showAIChat && (
+        <motion.div
+          initial={{ x: 400 }}
+          animate={{ x: 0 }}
+          className="w-96 border-l border-gray-700/50 flex-shrink-0"
+        >
+          <AIChat projectId={project.id} onClose={() => setShowAIChat(false)} />
+        </motion.div>
+      )}
+
       {/* Chat Panel */}
       {showChat && (
-        <div className="w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700">
+        <motion.div
+          initial={{ x: 400 }}
+          animate={{ x: 0 }}
+          className="w-80 bg-dark-surface/95 backdrop-blur-xl border-l border-gray-700/50 flex-shrink-0"
+        >
           <ChatPanel projectId={project.id} roomId={project.roomId} />
-        </div>
+        </motion.div>
+      )}
+
+      {/* Extensions Panel */}
+      {showExtensions && (
+        <motion.div
+          initial={{ x: 400 }}
+          animate={{ x: 0 }}
+          className="w-96 border-l border-gray-700/50 flex-shrink-0"
+        >
+          <ExtensionsPanel projectId={project.id} onClose={() => setShowExtensions(false)} />
+        </motion.div>
+      )}
+
+      {/* Calendar Panel */}
+      {showCalendar && (
+        <motion.div
+          initial={{ x: 400 }}
+          animate={{ x: 0 }}
+          className="w-96 bg-dark-surface/95 backdrop-blur-xl border-l border-gray-700/50 flex-shrink-0 overflow-y-auto"
+        >
+          <div className="p-4 border-b border-gray-700/50 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <CalendarIcon className="w-5 h-5 text-collab-400" />
+              Calendar
+            </h3>
+            <button
+              onClick={() => setShowCalendar(false)}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <Calendar projectId={project.id} teamId={project.ownerTeam.id} />
+        </motion.div>
       )}
 
       {/* Metrics Panel */}
       {showMetrics && (
-        <div className="w-96 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-y-auto">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Code Metrics</h3>
+        <motion.div
+          initial={{ x: 400 }}
+          animate={{ x: 0 }}
+          className="w-96 bg-dark-surface/95 backdrop-blur-xl border-l border-gray-700/50 flex-shrink-0 overflow-y-auto"
+        >
+          <div className="p-4 border-b border-gray-700/50">
+            <h3 className="text-lg font-bold text-white">Code Metrics</h3>
           </div>
           <CodeMetrics projectId={project.id} />
-        </div>
+        </motion.div>
       )}
     </div>
   );
 }
-

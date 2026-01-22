@@ -9,12 +9,12 @@ router.get('/me', async (req: AuthRequest, res: Response, next: NextFunction) =>
   await userController.getProfile(req, res, next);
 });
 
-router.put('/me', async (req: AuthRequest, res, next) => {
+router.put('/me', async (req: AuthRequest, res: Response, next: NextFunction) => {
   await userController.updateProfile(req, res, next);
 });
 
 // Search users by email (for adding team members)
-router.get('/search', async (req: AuthRequest, res, next) => {
+router.get('/search', async (req: AuthRequest, res: Response, next: NextFunction) => {
   await userController.searchUsers(req, res, next);
 });
 

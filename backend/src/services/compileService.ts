@@ -142,9 +142,7 @@ export class CompileService {
 
     try {
       const startTime = Date.now();
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
+      const { spawn } = await import('child_process');
 
       // Write code to temp file and execute
       const fs = await import('fs/promises');
@@ -157,22 +155,41 @@ export class CompileService {
       await fs.writeFile(tempFile, request.code);
 
       try {
-        const { stdout, stderr } = await execAsync(
-          `node ${tempFile}`,
-          {
+        return await new Promise<any>((resolve, reject) => {
+          const child = spawn('node', [tempFile], {
             timeout: 5000,
-            input: request.stdin,
+          });
+
+          let stdout = '';
+          let stderr = '';
+
+          child.stdout.on('data', (data) => {
+            stdout += data.toString();
+          });
+
+          child.stderr.on('data', (data) => {
+            stderr += data.toString();
+          });
+
+          if (request.stdin) {
+            child.stdin.write(request.stdin);
+            child.stdin.end();
           }
-        );
 
-        const timeMs = Date.now() - startTime;
+          child.on('close', (code) => {
+            const timeMs = Date.now() - startTime;
+            resolve({
+              status: code === 0 && !stderr ? 'success' : 'error',
+              output: stdout || '',
+              error: stderr || '',
+              timeMs,
+            });
+          });
 
-        return {
-          status: stderr ? 'error' : 'success',
-          output: stdout || '',
-          error: stderr || '',
-          timeMs,
-        };
+          child.on('error', (error) => {
+            reject(error);
+          });
+        });
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
@@ -181,7 +198,7 @@ export class CompileService {
         status: 'error',
         output: '',
         error: error.message || 'Execution failed',
-        timeMs: Date.now() - Date.now(),
+        timeMs: 0,
       };
     }
   }

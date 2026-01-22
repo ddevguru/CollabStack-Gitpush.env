@@ -77,13 +77,29 @@ export default function OAuthCallback() {
           navigate('/settings');
         } else {
           // User is not logged in, this is login flow
-          const response = await api.post(`/auth/${provider}/callback`, { code });
-          const { user, token } = response.data.data;
-          
-          setToken(token);
-          setUser(user);
-          toast.success('Logged in successfully!');
-          navigate('/');
+          try {
+            const response = await api.post(`/auth/${provider}/callback`, { code });
+            
+            if (response.data.success && response.data.data) {
+              const { user, token } = response.data.data;
+              
+              if (token && user) {
+                setToken(token);
+                setUser(user);
+                toast.success('Logged in successfully!');
+                navigate('/dashboard');
+              } else {
+                throw new Error('Invalid response from server');
+              }
+            } else {
+              throw new Error(response.data.error?.message || 'Login failed');
+            }
+          } catch (error: any) {
+            console.error('OAuth login error:', error);
+            const errorMessage = error.response?.data?.error?.message || error.message || 'Failed to login';
+            toast.error(errorMessage);
+            setTimeout(() => navigate('/login'), 2000);
+          }
         }
       } catch (error: any) {
         console.error('OAuth callback error:', error);

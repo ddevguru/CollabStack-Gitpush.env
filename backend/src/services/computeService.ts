@@ -1,4 +1,4 @@
-import { PrismaClient, ComputeJobStatus, ComputeResourceType } from '@prisma/client';
+import { PrismaClient, ComputeJobStatus, ComputeResourceType, Prisma } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
@@ -83,7 +83,7 @@ export class ComputeService {
    * Deduct credits from user account
    */
   private async deductCredits(userId: string, amount: number, description: string, jobId: string) {
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const credits = await tx.computeCredits.findUnique({
         where: { userId },
       });

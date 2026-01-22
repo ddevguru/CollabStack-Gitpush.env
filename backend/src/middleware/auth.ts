@@ -9,6 +9,12 @@ export interface AuthRequest extends Request {
     email: string;
     name: string;
   };
+  params: Request['params'];
+  body: Request['body'];
+  query: Request['query'];
+  headers: Request['headers'];
+  path: Request['path'];
+  method: Request['method'];
 }
 
 export const authenticate = async (

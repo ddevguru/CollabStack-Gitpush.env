@@ -99,6 +99,44 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
       fontSize: 14,
       wordWrap: 'on',
       automaticLayout: true,
+      // Enable Emmet
+      emmet: {
+        enabled: true,
+      },
+      // Auto-close suggestions on Enter
+      acceptSuggestionOnEnter: 'on',
+      tabCompletion: 'on',
+    });
+
+    // Enable Emmet - Monaco has built-in Emmet support
+    // Just need to configure it properly
+    monaco.languages.setLanguageConfiguration('html', {
+      wordPattern: /(-?\d*\.\d\w*)|([^\`\~\!\@\#\%\^\&\*\(\)\=\+\[\{\]\}\\\|\;\:\'\"\,\.\<\>\/\?\s]+)/g,
+      comments: {
+        blockComment: ['<!--', '-->']
+      },
+      brackets: [
+        ['<', '>'],
+        ['{', '}'],
+        ['[', ']']
+      ],
+      autoClosingPairs: [
+        { open: '{', close: '}' },
+        { open: '[', close: ']' },
+        { open: '(', close: ')' },
+        { open: '"', close: '"', notIn: ['string'] },
+        { open: "'", close: "'", notIn: ['string', 'comment'] },
+        { open: '`', close: '`', notIn: ['string', 'comment'] },
+        { open: '/**', close: ' */', notIn: ['string'] }
+      ],
+      surroundingPairs: [
+        { open: '{', close: '}' },
+        { open: '[', close: ']' },
+        { open: '(', close: ')' },
+        { open: '"', close: '"' },
+        { open: "'", close: "'" },
+        { open: '<', close: '>' }
+      ]
     });
 
     // Configure auto-closing for HTML/XML tags
@@ -179,11 +217,64 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
 
     // Listen for content changes
     let changeTimeout: NodeJS.Timeout;
-    editor.onDidChangeModelContent(() => {
+    editor.onDidChangeModelContent((e: monaco.editor.IModelContentChangedEvent) => {
       const content = editor.getValue();
       // Call onChange immediately for real-time updates
       if (onChange) {
         onChange(content);
+      }
+      
+      // Handle Emmet expansion for "!" (HTML5 structure)
+      const model = editor.getModel();
+      if (model) {
+        const changes = e.changes;
+        for (const change of changes) {
+          if (change.text === '!') {
+            const position = new monaco.Position(change.range.startLineNumber, change.range.startColumn);
+            const line = model.getLineContent(position.lineNumber);
+            const beforeCursor = line.substring(0, position.column - 1);
+            
+            // Check if "!" is at the start of line (Emmet pattern)
+            if (beforeCursor.trim() === '' && position.column === 1) {
+              // Add Tab command to expand
+              editor.addCommand(monaco.KeyCode.Tab, () => {
+                const currentPos = editor.getPosition();
+                if (currentPos && currentPos.lineNumber === position.lineNumber) {
+                  const currentLine = model.getLineContent(currentPos.lineNumber);
+                  if (currentLine.trim() === '!') {
+                    const htmlStructure = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    
+</body>
+</html>`;
+                    
+                    editor.executeEdits('emmet-expand', [
+                      {
+                        range: new monaco.Range(
+                          currentPos.lineNumber,
+                          1,
+                          currentPos.lineNumber,
+                          currentPos.column
+                        ),
+                        text: htmlStructure,
+                      },
+                    ]);
+                    
+                    // Move cursor to title
+                    const titleLine = htmlStructure.split('\n').findIndex(line => line.includes('<title>')) + currentPos.lineNumber;
+                    editor.setPosition({ lineNumber: titleLine, column: 12 });
+                  }
+                }
+              });
+            }
+          }
+        }
       }
       
       clearTimeout(changeTimeout);
@@ -197,22 +288,80 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
   const getLanguage = (path: string): string => {
     const ext = path.split('.').pop()?.toLowerCase();
     const langMap: Record<string, string> = {
+      // JavaScript/TypeScript
       js: 'javascript',
       jsx: 'javascript',
+      mjs: 'javascript',
       ts: 'typescript',
       tsx: 'typescript',
+      // Python
       py: 'python',
+      pyw: 'python',
+      pyi: 'python',
+      // Java
       java: 'java',
+      // C/C++
       c: 'c',
-      cpp: 'cpp',
       h: 'c',
+      cpp: 'cpp',
+      cxx: 'cpp',
+      cc: 'cpp',
       hpp: 'cpp',
-      json: 'json',
+      hxx: 'cpp',
+      // Web
       html: 'html',
+      htm: 'html',
       css: 'css',
-      md: 'markdown',
+      scss: 'scss',
+      sass: 'sass',
+      less: 'less',
+      // Data
+      json: 'json',
+      xml: 'xml',
       yml: 'yaml',
       yaml: 'yaml',
+      // Markup
+      md: 'markdown',
+      markdown: 'markdown',
+      // Shell
+      sh: 'shell',
+      bash: 'shell',
+      zsh: 'shell',
+      // SQL
+      sql: 'sql',
+      // Go
+      go: 'go',
+      // Rust
+      rs: 'rust',
+      // PHP
+      php: 'php',
+      // Ruby
+      rb: 'ruby',
+      // Swift
+      swift: 'swift',
+      // Kotlin
+      kt: 'kotlin',
+      kts: 'kotlin',
+      // Dart
+      dart: 'dart',
+      // R
+      r: 'r',
+      // Scala
+      scala: 'scala',
+      // Perl
+      pl: 'perl',
+      pm: 'perl',
+      // Lua
+      lua: 'lua',
+      // Docker
+      dockerfile: 'dockerfile',
+      // Config
+      ini: 'ini',
+      toml: 'toml',
+      conf: 'ini',
+      // Other
+      txt: 'plaintext',
+      log: 'plaintext',
     };
     return langMap[ext || ''] || 'plaintext';
   };

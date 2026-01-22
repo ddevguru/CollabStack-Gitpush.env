@@ -93,10 +93,15 @@ export const LiveCursors = ({ editorRef }: LiveCursorsProps) => {
                 style={{ backgroundColor: color }}
               />
               <div
-                className="absolute -top-6 left-0 px-2 py-1 rounded text-xs text-white whitespace-nowrap"
+                className="absolute -top-8 left-0 px-2 py-1 rounded text-xs text-white whitespace-nowrap shadow-lg"
                 style={{ backgroundColor: color }}
               >
-                {cursor.userName}
+                <div className="font-semibold">{cursor.userName}</div>
+                {cursor.position && (
+                  <div className="text-[10px] opacity-90">
+                    Line {cursor.position.line}, Col {cursor.position.column}
+                  </div>
+                )}
               </div>
               <motion.div
                 className="absolute -top-1 -left-1 w-3 h-3 rounded-full border-2 border-white"

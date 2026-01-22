@@ -86,7 +86,7 @@ export const setupRoomHandlers = (io: Server, socket: Socket) => {
       });
 
       socket.emit('room:users', {
-        users: sessions.map(s => ({
+        users: sessions.map((s: { user: { id: string; name: string; avatar: string | null }; activeFile: string | null; cursorPos: unknown }) => ({
           userId: s.user.id,
           userName: s.user.name,
           avatar: s.user.avatar,
@@ -263,7 +263,7 @@ export const setupRoomHandlers = (io: Server, socket: Socket) => {
     prisma.project.findUnique({
       where: { id: projectId },
       select: { roomId: true },
-    }).then((project) => {
+    }).then((project: { roomId: string } | null) => {
       if (project) {
         // Broadcast to all clients in the project room
         io.to(project.roomId).emit('terminal:output', {

@@ -223,7 +223,7 @@ export class FileController {
               await githubService.syncProject(
                 team.leader.githubToken!,
                 project.githubRepoName!,
-                projectFiles.map(f => ({ path: f.path, content: f.content, isDirectory: f.isDirectory })),
+                projectFiles.map((f: { path: string; content: string; isDirectory: boolean }) => ({ path: f.path, content: f.content, isDirectory: f.isDirectory })),
                 'main'
               );
             } catch (error) {
