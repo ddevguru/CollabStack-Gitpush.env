@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { motion } from 'framer-motion';
 import api from '@/services/api';
@@ -16,8 +16,11 @@ import CodeMetrics from './components/CodeMetrics';
 import RunButton from './components/RunButton';
 import ExtensionsPanel from './components/ExtensionsPanel';
 import UserPresencePanel from './components/UserPresencePanel';
+import ExecutionDashboard from './components/ExecutionDashboard';
+import DesignCanvas from './components/DesignCanvas';
+import DesignList from './components/DesignList';
 import { Calendar } from '@/components/nexus/Calendar';
-import { ArrowLeft, BarChart3, Bot, Package, Calendar as CalendarIcon, X, Code2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, Bot, Package, Calendar as CalendarIcon, X, Code2, Palette } from 'lucide-react';
 
 interface Project {
   id: string;
@@ -56,6 +59,7 @@ interface Branch {
 export default function ProjectView() {
   const { id, roomId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const [project, setProject] = useState<Project | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -68,10 +72,47 @@ export default function ProjectView() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [currentCode, setCurrentCode] = useState<string>('');
   const [autoPushTimer, setAutoPushTimer] = useState<NodeJS.Timeout | null>(null);
+  const [currentRunId, setCurrentRunId] = useState<string | undefined>();
+  const [showDesigns, setShowDesigns] = useState(false);
+  const [selectedDesignId, setSelectedDesignId] = useState<string | undefined>();
+
+  // Check if design ID is in URL params
+  useEffect(() => {
+    const designParam = searchParams.get('design');
+    if (designParam && project) {
+      setShowDesigns(true);
+      setSelectedDesignId(designParam);
+    }
+  }, [searchParams, project]);
 
   useEffect(() => {
     loadProject();
   }, [id, roomId]);
+
+  // Listen for run events to show execution dashboard
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !project) return;
+
+    const handleRunStarted = (data: { runId: string }) => {
+      setCurrentRunId(data.runId);
+    };
+
+    const handleRunCompleted = () => {
+      // Keep dashboard visible for a few seconds after completion
+      setTimeout(() => {
+        setCurrentRunId(undefined);
+      }, 5000);
+    };
+
+    socket.on('run:started', handleRunStarted);
+    socket.on('run:completed', handleRunCompleted);
+
+    return () => {
+      socket.off('run:started', handleRunStarted);
+      socket.off('run:completed', handleRunCompleted);
+    };
+  }, [project]);
 
   useEffect(() => {
     if (project) {
@@ -326,8 +367,29 @@ export default function ProjectView() {
               <BarChart3 className="w-4 h-4" />
               Metrics
             </button>
+            <button
+              onClick={() => {
+                setShowDesigns(!showDesigns);
+                setSelectedDesignId(undefined);
+              }}
+              className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-all ${
+                showDesigns
+                  ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
+                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
+              }`}
+            >
+              <Palette className="w-4 h-4" />
+              Design
+            </button>
           </div>
         </div>
+
+        {/* Execution Dashboard */}
+        {currentRunId && (
+          <div className="px-4 pt-2 flex-shrink-0">
+            <ExecutionDashboard projectId={project.id} roomId={project.roomId} runId={currentRunId} />
+          </div>
+        )}
 
         {/* Platform Execution */}
         {selectedFile && project.projectType && !selectedFile.isDirectory && (
@@ -341,16 +403,18 @@ export default function ProjectView() {
           </div>
         )}
 
-        {/* Editor */}
-        <div className="flex-1 relative min-h-0">
+        {/* Editor - Full Height */}
+        <div className="flex-1 relative min-h-0 overflow-hidden">
           {selectedFile ? (
-            <MonacoEditor
-              file={selectedFile}
-              onSave={handleFileSave}
-              onChange={(content) => setCurrentCode(content)}
-              projectId={project.id}
-              roomId={project.roomId}
-            />
+            <div className="absolute inset-0">
+              <MonacoEditor
+                file={selectedFile}
+                onSave={handleFileSave}
+                onChange={(content) => setCurrentCode(content)}
+                projectId={project.id}
+                roomId={project.roomId}
+              />
+            </div>
           ) : (
             <div className="flex items-center justify-center h-full text-gray-400">
               <div className="text-center">
@@ -388,6 +452,34 @@ export default function ProjectView() {
           className="w-80 bg-dark-surface/95 backdrop-blur-xl border-l border-gray-700/50 flex-shrink-0"
         >
           <ChatPanel projectId={project.id} roomId={project.roomId} />
+        </motion.div>
+      )}
+
+      {/* Design Panel */}
+      {showDesigns && (
+        <motion.div
+          initial={{ x: 400 }}
+          animate={{ x: 0 }}
+          className="w-[800px] border-l border-gray-700/50 flex-shrink-0 flex flex-col bg-gray-900"
+        >
+          {selectedDesignId ? (
+            <div className="flex-1 flex flex-col min-h-0">
+              <DesignCanvas
+                projectId={project.id}
+                designId={selectedDesignId === 'new' ? undefined : selectedDesignId}
+                onClose={() => setSelectedDesignId(undefined)}
+              />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              <DesignList
+                projectId={project.id}
+                onSelectDesign={(id) => setSelectedDesignId(id)}
+                onNewDesign={() => setSelectedDesignId(undefined)}
+                onCreateNew={() => setSelectedDesignId('new')}
+              />
+            </div>
+          )}
         </motion.div>
       )}
 

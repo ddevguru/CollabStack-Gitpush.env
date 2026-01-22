@@ -32,6 +32,7 @@ model User {
   tasks              Task[]
   createdTeams       Team[]          @relation("TeamLeader")
   teamMemberships    TeamMember[]
+  designs            Design[]
 
   @@index([email])
 }
@@ -98,6 +99,7 @@ model Project {
   sessionRecordings SessionRecording[]
   shareLinks        ShareLink[]
   tasks             Task[]
+  designs           Design[]
 
   @@index([ownerTeamId])
   @@index([createdBy])
@@ -118,6 +120,23 @@ model File {
   @@unique([projectId, path])
   @@index([projectId])
   @@index([parentId])
+}
+
+model Design {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  name      String
+  data      String   @default("[]")
+  thumbnail String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model Branch {

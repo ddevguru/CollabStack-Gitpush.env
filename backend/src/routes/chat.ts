@@ -82,5 +82,60 @@ router.get('/projects/:projectId/history', async (req: AuthRequest, res: Respons
   }
 });
 
+// Get active users in a project
+router.get('/projects/:projectId/users', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.userId) {
+      throw createError('Unauthorized', 401);
+    }
+
+    const { projectId } = req.params;
+
+    // Verify user has access to project
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ownerTeam: {
+          OR: [
+            { leaderId: req.userId },
+            { members: { some: { userId: req.userId } } },
+          ],
+        },
+      },
+    });
+
+    if (!project) {
+      throw createError('Project not found or access denied', 404);
+    }
+
+    // Get active sessions
+    const sessions = await prisma.session.findMany({
+      where: { projectId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    const users = sessions.map((s) => ({
+      userId: s.user.id,
+      userName: s.user.name,
+      avatar: s.user.avatar,
+    }));
+
+    res.json({
+      success: true,
+      data: { users },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
 

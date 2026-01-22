@@ -366,10 +366,23 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
     return langMap[ext || ''] || 'plaintext';
   };
 
+  // Expose editor to window for WhatsApp sharing
+  useEffect(() => {
+    if (editorRef.current) {
+      (window as any).monacoEditor = editorRef.current;
+    }
+    return () => {
+      if ((window as any).monacoEditor === editorRef.current) {
+        delete (window as any).monacoEditor;
+      }
+    };
+  }, [editorRef.current]);
+
   return (
-    <div className="relative h-full">
+    <div className="relative w-full h-full">
       <Editor
         height="100%"
+        width="100%"
         language={getLanguage(file.path)}
         value={file.content}
         theme="vs-dark"

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { Plus, Settings, LogOut, Users, UserPlus, X, Github, FolderKanban, Code2, Video, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, Settings, LogOut, Users, UserPlus, X, Github, FolderKanban, Code2, Video, Calendar as CalendarIcon, Palette } from 'lucide-react';
 import { PageLayout } from '@/components/nexus/PageLayout';
 import { GoogleMeetScheduler } from '@/components/nexus/GoogleMeetScheduler';
 import { Calendar } from '@/components/nexus/Calendar';
@@ -70,6 +70,9 @@ export default function Dashboard() {
   const [githubConnected, setGithubConnected] = useState(false);
   const [showMeetScheduler, setShowMeetScheduler] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showDesigns, setShowDesigns] = useState(false);
+  const [designs, setDesigns] = useState<any[]>([]);
+  const [selectedTab, setSelectedTab] = useState<'projects' | 'teams' | 'designs'>('projects');
 
   useEffect(() => {
     loadData();
@@ -94,6 +97,22 @@ export default function Dashboard() {
       ]);
       setTeams(teamsRes.data.data.teams);
       setProjects(projectsRes.data.data.projects);
+      
+      // Load all designs from all projects
+      const allDesigns: any[] = [];
+      for (const project of projectsRes.data.data.projects) {
+        try {
+          const designsRes = await api.get(`/designs/projects/${project.id}`);
+          if (designsRes.data.success && designsRes.data.data.designs) {
+            designsRes.data.data.designs.forEach((design: any) => {
+              allDesigns.push({ ...design, projectName: project.name, projectId: project.id });
+            });
+          }
+        } catch (error) {
+          // Ignore projects without designs
+        }
+      }
+      setDesigns(allDesigns);
     } catch (error: any) {
       toast.error('Failed to load data');
     } finally {
@@ -293,9 +312,12 @@ export default function Dashboard() {
         <div className="mb-6 border-b border-gray-700/50">
           <nav className="flex space-x-8">
             <button
-              onClick={() => setShowTeams(false)}
+              onClick={() => {
+                setShowTeams(false);
+                setSelectedTab('projects');
+              }}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                !showTeams
+                selectedTab === 'projects'
                   ? 'border-collab-400 text-collab-400'
                   : 'border-transparent text-gray-400 hover:text-gray-300'
               }`}
@@ -305,22 +327,37 @@ export default function Dashboard() {
             <button
               onClick={() => {
                 setShowTeams(true);
+                setSelectedTab('teams');
                 loadData();
               }}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                showTeams
+                selectedTab === 'teams'
                   ? 'border-collab-400 text-collab-400'
                   : 'border-transparent text-gray-400 hover:text-gray-300'
               }`}
             >
               Teams
             </button>
+            <button
+              onClick={() => {
+                setShowTeams(false);
+                setSelectedTab('designs');
+              }}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+                selectedTab === 'designs'
+                  ? 'border-collab-400 text-collab-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              <Palette className="w-4 h-4" />
+              Designs
+            </button>
           </nav>
         </div>
 
         <div className="mb-8 flex justify-between items-center">
           <h2 className="text-3xl font-black bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">
-            {showTeams ? 'My Teams' : 'My Projects'}
+            {selectedTab === 'teams' ? 'My Teams' : selectedTab === 'designs' ? 'My Designs' : 'My Projects'}
           </h2>
           <div className="space-x-2">
             {showTeams ? (
@@ -410,6 +447,45 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
+              ))}
+            </div>
+          )
+        ) : selectedTab === 'designs' ? (
+          designs.length === 0 ? (
+            <div className="text-center py-12">
+              <Palette className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+              <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">No designs yet</p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm">Create your first design in a project!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {designs.map((design) => (
+                <Link
+                  key={design.id}
+                  to={`/project/${design.projectId}?design=${design.id}`}
+                  className="bg-dark-surface/90 backdrop-blur-xl border-2 border-gray-700/50 rounded-xl shadow-lg hover:shadow-2xl hover:border-collab-500/50 transition-all duration-200 p-6 h-full flex flex-col"
+                >
+                  <div className="aspect-video bg-gray-800/50 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                    {design.thumbnail ? (
+                      <img src={design.thumbnail} alt={design.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Palette className="w-16 h-16 text-gray-600" />
+                    )}
+                  </div>
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Palette className="w-5 h-5 text-pink-400" />
+                      <h3 className="text-lg font-bold text-white truncate">{design.name}</h3>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-400 mb-4 line-clamp-1">Project: {design.projectName}</p>
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-700/50 mt-auto">
+                    <span className="text-xs font-medium text-gray-400">{design.user?.name || 'Unknown'}</span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(design.updatedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </Link>
               ))}
             </div>
           )

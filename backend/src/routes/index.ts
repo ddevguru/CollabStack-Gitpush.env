@@ -18,6 +18,7 @@ import reviewRoutes from './review.js';
 import chatRoutes from './chat.js';
 import meetRoutes from './meet.js';
 import aiRoutes from './ai.js';
+import designRoutes from './designs.js';
 import extensionRoutes from './extensions.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -38,6 +39,7 @@ export const setupRoutes = (app: Express) => {
   app.use('/api/chat', authenticate, chatRoutes);
   app.use('/api/meet', authenticate, meetRoutes);
   app.use('/api/ai', authenticate, aiRoutes);
+  app.use('/api/designs', authenticate, designRoutes);
   app.use('/api/extensions', authenticate, extensionRoutes);
   app.use('/api/share', shareRoutes); // Share links can be public
   app.use('/api/templates', templateRoutes); // Templates can be public
