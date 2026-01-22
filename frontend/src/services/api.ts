@@ -7,7 +7,6 @@ const api = axios.create({
   },
 });
 
-// Add token from storage on initialization
 const token = localStorage.getItem('auth-storage');
 if (token) {
   try {

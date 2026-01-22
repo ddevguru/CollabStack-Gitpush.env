@@ -5,7 +5,7 @@ import { Github, Mail, Lock, ArrowRight } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 
-export default function Login() {
+export default function LoginEnhanced() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { login, isLoading } = useAuthStore();
@@ -149,3 +149,4 @@ export default function Login() {
     </div>
   );
 }
+
