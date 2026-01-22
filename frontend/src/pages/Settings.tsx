@@ -7,7 +7,7 @@ import { ArrowLeft, Github, Cloud } from 'lucide-react';
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { user: _user } = useAuthStore();
   const [githubConnected, setGithubConnected] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
 

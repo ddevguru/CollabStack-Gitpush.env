@@ -28,7 +28,7 @@ export const EditorLayout = ({ leftPane, rightPane, editorRef }: EditorLayoutPro
         size={{ width: `${leftWidth}%`, height: '100%' }}
         minWidth="40%"
         maxWidth="80%"
-        onResizeStop={(e, direction, ref, d) => {
+        onResizeStop={(_e, _direction, _ref, d) => {
           const newWidth = (leftWidth * window.innerWidth + d.width) / window.innerWidth * 100;
           setLeftWidth(Math.max(40, Math.min(80, newWidth)));
         }}

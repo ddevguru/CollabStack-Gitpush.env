@@ -331,6 +331,17 @@ npm run build
 
 ## Deployment
 
+### Render Deployment (Recommended)
+
+**Quick Deploy to Render:** See [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md) for a complete guide.
+
+**Quick Start:**
+1. Push your code to GitHub
+2. Go to [Render Dashboard](https://dashboard.render.com)
+3. Click **"New +"** → **"Blueprint"**
+4. Connect your repository (Render will detect `render.yaml`)
+5. Update environment variables and deploy!
+
 ### Docker Deployment
 
 ```bash

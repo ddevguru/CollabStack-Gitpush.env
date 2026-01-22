@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Folder, File, Plus, Trash2 } from 'lucide-react';
+import { Folder, File, Plus } from 'lucide-react';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 
@@ -102,7 +102,7 @@ export default function FileExplorer({
   const handleCreateFile = async () => {
     if (!newFileName) return;
     try {
-      const response = await api.post(`/files/${projectId}`, {
+      await api.post(`/files/${projectId}`, {
         path: newFileName,
         content: '',
         isDirectory: false,
@@ -117,7 +117,7 @@ export default function FileExplorer({
     }
   };
 
-  const handleDeleteFile = async (file: File) => {
+  const _handleDeleteFile = async (file: File) => {
     if (!confirm(`Delete ${file.path}?`)) return;
     try {
       await api.delete(`/files/${projectId}/${file.id}`);

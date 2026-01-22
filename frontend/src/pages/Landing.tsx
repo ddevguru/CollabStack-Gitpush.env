@@ -337,7 +337,7 @@ export const Landing = () => {
                   style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
                   onMouseMove={handleMouseMove}
                   onMouseLeave={handleMouseLeave}
-                  className="bg-dark-surface/90 backdrop-blur-md rounded-2xl p-8 border-2 border-gray-800 hover:border-collab-500 transition-all group cursor-pointer relative overflow-hidden"
+                  className="bg-dark-surface/40 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-white/20 transition-all group cursor-pointer relative overflow-hidden shadow-xl"
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-collab-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                   <motion.div
@@ -363,7 +363,7 @@ export const Landing = () => {
             <motion.div
               whileHover={{ y: -20, rotateY: 2, rotateX: -2 }}
               transition={{ type: 'spring', stiffness: 300 }}
-              className="bg-dark-editor rounded-3xl border-2 border-gray-800 p-10 shadow-2xl relative overflow-hidden group"
+              className="bg-dark-editor/60 backdrop-blur-xl rounded-3xl border border-white/10 p-10 shadow-2xl relative overflow-hidden group"
               style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}
             >
               {/* Animated gradient background */}
@@ -502,7 +502,7 @@ export const Landing = () => {
                   style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
                   onMouseMove={handleMouseMove}
                   onMouseLeave={handleMouseLeave}
-                  className="group bg-dark-surface/90 backdrop-blur-md rounded-3xl p-8 border-2 border-gray-800 hover:border-collab-500 transition-all relative overflow-hidden cursor-pointer h-full"
+                  className="group bg-dark-surface/40 backdrop-blur-xl rounded-3xl p-8 border border-white/10 hover:border-white/20 transition-all relative overflow-hidden cursor-pointer h-full shadow-xl"
                 >
                   <motion.div
                     className={`absolute inset-0 bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-20 transition-opacity duration-500`}
@@ -539,7 +539,7 @@ export const Landing = () => {
             initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
-            className="bg-dark-surface/90 backdrop-blur-md rounded-3xl p-12 border-2 border-gray-800"
+            className="bg-dark-surface/40 backdrop-blur-xl rounded-3xl p-12 border border-white/10 shadow-xl"
           >
             <h3 className="text-4xl font-bold text-center mb-12 text-white" style={{ textShadow: '0 2px 10px rgba(0, 0, 0, 0.6)' }}>Everything You Need</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -602,7 +602,7 @@ export const Landing = () => {
                 viewport={{ once: true }}
                 transition={{ delay: tech.delay, type: 'spring', stiffness: 200 }}
                 whileHover={{ scale: 1.15, rotate: 5, y: -10, z: 50 }}
-                className="px-8 py-5 bg-dark-surface/90 backdrop-blur-md rounded-2xl border-2 border-gray-800 hover:border-collab-500 transition-all font-mono text-xl cursor-pointer group relative overflow-hidden"
+                className="px-8 py-5 bg-dark-surface/40 backdrop-blur-xl rounded-2xl border border-white/10 hover:border-white/20 transition-all font-mono text-xl cursor-pointer group relative overflow-hidden shadow-xl"
                 style={{ transformStyle: 'preserve-3d' }}
               >
                 <motion.div

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { getSocket } from '@/services/socket';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { Play, Square, Trash2, Copy, Terminal as TerminalIcon } from 'lucide-react';
+import { Play, Trash2, Copy, Terminal as TerminalIcon } from 'lucide-react';
 
 interface TerminalProps {
   projectId: string;

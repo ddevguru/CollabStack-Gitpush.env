@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard, Lock, Check, X } from 'lucide-react';
+import { CreditCard, Lock, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Plan {

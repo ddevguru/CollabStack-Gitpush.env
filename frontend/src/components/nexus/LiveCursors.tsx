@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useSessionStore, CURSOR_COLORS } from '../../stores/sessionStore';
+import * as monaco from 'monaco-editor';
 
 interface LiveCursorsProps {
   editorRef: any;
@@ -7,6 +9,56 @@ interface LiveCursorsProps {
 
 export const LiveCursors = ({ editorRef }: LiveCursorsProps) => {
   const cursors = useSessionStore((state) => state.cursors);
+  const [cursorPositions, setCursorPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+
+  useEffect(() => {
+    if (!editorRef?.current || cursors.length === 0) return;
+
+    const editor = editorRef.current;
+    const updatePositions = () => {
+      const positions = new Map<string, { x: number; y: number }>();
+      
+      cursors.forEach((cursor) => {
+        try {
+          // Convert Monaco editor coordinates to pixel coordinates
+          const position = new monaco.Position(cursor.position.line, cursor.position.column);
+          const coords = editor.getScrolledVisiblePosition(position);
+          
+          if (coords) {
+            const layoutInfo = editor.getLayoutInfo();
+            const x = coords.left + layoutInfo.contentLeft;
+            const y = coords.top + layoutInfo.contentTop;
+            positions.set(cursor.userId, { x, y });
+          }
+        } catch (error) {
+          // Fallback to approximate positioning
+          const fontSize = editor.getOption(monaco.editor.EditorOption.fontSize) || 14;
+          const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight) || fontSize * 1.5;
+          const x = cursor.position.column * (fontSize * 0.6);
+          const y = (cursor.position.line - 1) * lineHeight;
+          positions.set(cursor.userId, { x, y });
+        }
+      });
+      
+      setCursorPositions(positions);
+    };
+
+    updatePositions();
+    
+    // Update positions on scroll and resize
+    const disposables = [
+      editor.onDidScrollChange(updatePositions),
+      editor.onDidChangeLayout(updatePositions),
+    ];
+
+    // Update periodically to catch cursor movements
+    const interval = setInterval(updatePositions, 100);
+
+    return () => {
+      disposables.forEach(d => d.dispose());
+      clearInterval(interval);
+    };
+  }, [editorRef, cursors]);
 
   if (!editorRef?.current || cursors.length === 0) return null;
 
@@ -14,17 +66,25 @@ export const LiveCursors = ({ editorRef }: LiveCursorsProps) => {
     <div className="absolute inset-0 pointer-events-none z-50">
       {cursors.map((cursor) => {
         const color = CURSOR_COLORS[cursor.userId.charCodeAt(0) % CURSOR_COLORS.length];
+        const position = cursorPositions.get(cursor.userId);
+        
+        if (!position) return null;
         
         return (
           <motion.div
             key={cursor.userId}
             className="absolute"
             initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
+            animate={{ 
+              opacity: 1, 
+              scale: 1,
+              x: position.x,
+              y: position.y,
+            }}
             exit={{ opacity: 0, scale: 0.8 }}
-            style={{
-              left: `${cursor.position.column * 8}px`,
-              top: `${cursor.position.line * 20}px`,
+            transition={{
+              x: { type: 'spring', stiffness: 500, damping: 30 },
+              y: { type: 'spring', stiffness: 500, damping: 30 },
             }}
           >
             <div className="relative">

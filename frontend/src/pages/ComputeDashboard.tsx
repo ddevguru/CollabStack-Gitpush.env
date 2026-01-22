@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { Cpu, Zap, Clock, DollarSign, Calendar, Play, History } from 'lucide-react';
+import { Cpu, Zap, DollarSign, Calendar, History } from 'lucide-react';
 
 interface Credits {
   balance: number;
@@ -28,7 +28,7 @@ interface ComputeJob {
 
 export default function ComputeDashboard() {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { user: _user } = useAuthStore();
   const [credits, setCredits] = useState<Credits | null>(null);
   const [jobs, setJobs] = useState<ComputeJob[]>([]);
   const [loading, setLoading] = useState(true);

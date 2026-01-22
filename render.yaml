@@ -1,0 +1,62 @@
+databases:
+  # PostgreSQL Database
+  - name: collaborative-ide-db
+    plan: free  # Change to 'starter' for production
+    region: oregon  # Change to your preferred region
+
+services:
+  # Backend Service
+  - type: web
+    name: collaborative-ide-backend
+    runtime: node
+    region: oregon  # Should match database region
+    plan: free  # Change to 'starter' for production
+    buildCommand: npm install && npm run build && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+    rootDir: backend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: collaborative-ide-db
+          property: connectionString
+      - key: FRONTEND_URL
+        sync: false  # Set this manually after frontend is deployed
+      - key: JWT_SECRET
+        generateValue: true  # Render will generate a secure secret
+      - key: GITHUB_CLIENT_ID
+        sync: false  # Set manually
+      - key: GITHUB_CLIENT_SECRET
+        sync: false  # Set manually
+      - key: GOOGLE_CLIENT_ID
+        sync: false  # Set manually
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false  # Set manually
+      - key: GOOGLE_REDIRECT_URI
+        sync: false  # Set manually after frontend is deployed
+      - key: JUDGE0_API_URL
+        value: https://judge0-ce.p.rapidapi.com
+      - key: JUDGE0_API_KEY
+        sync: false  # Optional
+
+  # Frontend Service
+  - type: web
+    name: collaborative-ide-frontend
+    runtime: node
+    region: oregon  # Should match backend region
+    plan: free  # Change to 'starter' for production
+    buildCommand: npm install && npm run build
+    startCommand: npm run preview
+    rootDir: frontend
+    envVars:
+      - key: VITE_API_URL
+        sync: false  # Set manually as: https://collaborative-ide-backend.onrender.com
+        # Note: Must be set before first build since Vite env vars are baked in
+      - key: VITE_GITHUB_CLIENT_ID
+        sync: false  # Set manually
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false  # Set manually
+

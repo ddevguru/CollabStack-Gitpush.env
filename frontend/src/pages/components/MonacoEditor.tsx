@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import { getSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/authStore';
+import { useSessionStore } from '@/stores/sessionStore';
+import { LiveCursors } from '@/components/nexus/LiveCursors';
 
 interface File {
   id: string;
@@ -21,14 +24,43 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
   const editorRef = useRef<any>(null);
   const { user } = useAuthStore();
   const socket = getSocket();
+  const { addCursor, updateCursor, removeCursor } = useSessionStore();
 
   useEffect(() => {
     if (!socket || !editorRef.current) return;
 
     const handleCursorUpdate = (data: any) => {
-      if (data.userId === user?.id) return;
-      // Update remote cursor positions
-      // This would require Monaco's collaboration plugin
+      // Only show cursors for other users on the same file
+      if (data.userId === user?.id || data.filePath !== file.path) {
+        // Remove cursor if user switched files
+        if (data.filePath !== file.path) {
+          removeCursor(data.userId);
+        }
+        return;
+      }
+      
+      // Update cursor in session store
+      const cursor = {
+        userId: data.userId,
+        userName: data.userName || 'Unknown',
+        color: '',
+        position: data.position,
+        fileId: file.id,
+      };
+      
+      // Check if cursor already exists
+      const existingCursor = useSessionStore.getState().cursors.find(c => c.userId === data.userId && c.fileId === file.id);
+      if (existingCursor) {
+        updateCursor(data.userId, data.position);
+      } else {
+        addCursor(cursor);
+      }
+    };
+
+    const handleUserLeft = (data: any) => {
+      if (data.userId) {
+        removeCursor(data.userId);
+      }
     };
 
     const handleEdit = (data: any) => {
@@ -38,13 +70,25 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
     };
 
     socket.on('cursor:updated', handleCursorUpdate);
+    socket.on('user:left', handleUserLeft);
     socket.on('edit', handleEdit);
 
     return () => {
       socket.off('cursor:updated', handleCursorUpdate);
+      socket.off('user:left', handleUserLeft);
       socket.off('edit', handleEdit);
     };
-  }, [socket, file, user]);
+  }, [socket, file, user, addCursor, updateCursor, removeCursor]);
+
+  // Clean up cursors when file changes
+  useEffect(() => {
+    const currentCursors = useSessionStore.getState().cursors;
+    currentCursors.forEach(cursor => {
+      if (cursor.fileId !== file.id) {
+        removeCursor(cursor.userId);
+      }
+    });
+  }, [file.id, removeCursor]);
 
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
@@ -61,7 +105,7 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
     const language = getLanguage(file.path);
     if (language === 'html' || language === 'xml') {
       // Add custom action to auto-close HTML tags when typing '>'
-      editor.onDidChangeModelContent((e) => {
+      editor.onDidChangeModelContent((e: monaco.editor.IModelContentChangedEvent) => {
         const model = editor.getModel();
         if (!model) return;
         
@@ -69,7 +113,7 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
         for (const change of changes) {
           // Check if '>' was just typed
           if (change.text === '>') {
-            const position = change.range.getStartPosition();
+            const position = new monaco.Position(change.range.startLineNumber, change.range.startColumn);
             const line = model.getLineContent(position.lineNumber);
             const beforeCursor = line.substring(0, position.column - 1);
             
@@ -120,7 +164,7 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
 
     // Listen for cursor changes
     editor.onDidChangeCursorPosition((e: any) => {
-      if (socket) {
+      if (socket && user) {
         socket.emit('cursor:update', {
           roomId,
           projectId,
@@ -174,37 +218,39 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
   };
 
   return (
-    <Editor
-      height="100%"
-      language={getLanguage(file.path)}
-      value={file.content}
-      theme="vs-dark"
-      onMount={handleEditorDidMount}
-      options={{
-        minimap: { enabled: true },
-        fontSize: 14,
-        wordWrap: 'on',
-        automaticLayout: true,
-        scrollBeyondLastLine: false,
-        renderWhitespace: 'selection',
-        formatOnPaste: true,
-        formatOnType: true,
-        autoClosingBrackets: 'always',
-        autoClosingQuotes: 'always',
-        autoClosingPairs: 'always',
-        autoIndent: 'full',
-        suggestOnTriggerCharacters: true,
-        quickSuggestions: {
-          other: true,
-          comments: true,
-          strings: true,
-        },
-        acceptSuggestionOnCommitCharacter: true,
-        acceptSuggestionOnEnter: 'on',
-        tabCompletion: 'on',
-        wordBasedSuggestions: 'allDocuments',
-      }}
-    />
+    <div className="relative h-full">
+      <Editor
+        height="100%"
+        language={getLanguage(file.path)}
+        value={file.content}
+        theme="vs-dark"
+        onMount={handleEditorDidMount}
+        options={{
+          minimap: { enabled: true },
+          fontSize: 14,
+          wordWrap: 'on',
+          automaticLayout: true,
+          scrollBeyondLastLine: false,
+          renderWhitespace: 'selection',
+          formatOnPaste: true,
+          formatOnType: true,
+          autoClosingBrackets: 'always',
+          autoClosingQuotes: 'always',
+          autoIndent: 'full',
+          suggestOnTriggerCharacters: true,
+          quickSuggestions: {
+            other: true,
+            comments: true,
+            strings: true,
+          },
+          acceptSuggestionOnCommitCharacter: true,
+          acceptSuggestionOnEnter: 'on',
+          tabCompletion: 'on',
+          wordBasedSuggestions: 'allDocuments',
+        }}
+      />
+      <LiveCursors editorRef={editorRef} />
+    </div>
   );
 }
 

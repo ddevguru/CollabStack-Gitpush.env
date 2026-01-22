@@ -85,7 +85,7 @@ export default function Dashboard() {
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await api.post('/teams', {
+      await api.post('/teams', {
         name: teamName,
         description: teamDescription,
       });
@@ -106,7 +106,7 @@ export default function Dashboard() {
       return;
     }
     try {
-      const response = await api.post('/projects', {
+      await api.post('/projects', {
         name: projectName,
         description: projectDescription,
         projectType: projectType || undefined, // Auto-detect if not provided

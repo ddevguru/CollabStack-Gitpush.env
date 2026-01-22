@@ -155,19 +155,23 @@ export default function ProjectView() {
       }
 
       // If auto-push is enabled, set up timer for 2 seconds
-      if (project.settings?.autoPush && project.githubRepoName) {
+      const settings = project.settings as any;
+      if (settings?.autoPush && project.githubRepoName) {
         const timer = setTimeout(async () => {
           try {
             // Get current branch (default to main)
-            const currentBranch = project.branches.find(b => b.name === 'main')?.gitBranchName || 'main';
+            const mainBranch = project.branches.find(b => b.name === 'main');
+            const currentBranch = mainBranch?.gitBranchName || 'main';
+            
             await api.post(`/github/projects/${project.id}/push`, {
               branchName: currentBranch,
               commitMessage: `Auto-save: ${new Date().toLocaleString()}`,
             });
+            console.log('Auto-push successful');
             // Don't show toast for auto-push to avoid spam
           } catch (error: any) {
-            // Silently fail for auto-push
-            console.error('Auto-push failed:', error);
+            // Log error but don't show toast to avoid spam
+            console.error('Auto-push failed:', error.response?.data || error.message);
           }
         }, 2000);
         setAutoPushTimer(timer);
@@ -207,7 +211,7 @@ export default function ProjectView() {
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-2">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/dashboard')}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
             >
               <ArrowLeft className="w-5 h-5" />
