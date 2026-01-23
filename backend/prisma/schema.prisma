@@ -18,6 +18,7 @@ model User {
   githubUsername     String?
   googleToken        String?
   googleRefreshToken String?
+  isEmailVerified    Boolean         @default(false)
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
   codeReviews        CodeReview[]    @relation("CodeReviews")
@@ -33,6 +34,7 @@ model User {
   createdTeams       Team[]          @relation("TeamLeader")
   teamMemberships    TeamMember[]
   designs            Design[]
+  otps               Otp[]
 
   @@index([email])
 }
@@ -477,6 +479,28 @@ model ShareLink {
 
   @@index([shortCode])
   @@index([projectId])
+}
+
+model Otp {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  type      OtpType
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  userId    String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([code])
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+enum OtpType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
 }
 
 enum AuthProvider {

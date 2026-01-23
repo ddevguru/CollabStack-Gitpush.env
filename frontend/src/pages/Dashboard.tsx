@@ -7,6 +7,9 @@ import { Plus, Settings, LogOut, Users, UserPlus, X, Github, FolderKanban, Code2
 import { PageLayout } from '@/components/nexus/PageLayout';
 import { GoogleMeetScheduler } from '@/components/nexus/GoogleMeetScheduler';
 import { Calendar } from '@/components/nexus/Calendar';
+import DesignCanvas from './components/DesignCanvas';
+import DesignList from './components/DesignList';
+import { motion } from 'framer-motion';
 
 interface Team {
   id: string;
@@ -70,9 +73,10 @@ export default function Dashboard() {
   const [githubConnected, setGithubConnected] = useState(false);
   const [showMeetScheduler, setShowMeetScheduler] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
-  const [showDesigns, setShowDesigns] = useState(false);
   const [designs, setDesigns] = useState<any[]>([]);
   const [selectedTab, setSelectedTab] = useState<'projects' | 'teams' | 'designs'>('projects');
+  const [selectedDesignId, setSelectedDesignId] = useState<string | undefined>();
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>();
 
   useEffect(() => {
     loadData();
@@ -368,6 +372,35 @@ export default function Dashboard() {
                 <Plus className="w-4 h-4" />
                 Create Team
               </button>
+            ) : selectedTab === 'designs' ? (
+              <>
+                {projects.length > 0 && (
+                  <select
+                    value={selectedProjectId || ''}
+                    onChange={(e) => setSelectedProjectId(e.target.value || undefined)}
+                    className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-collab-500"
+                  >
+                    <option value="">Select Project</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {selectedProjectId && (
+                  <button
+                    onClick={() => {
+                      setSelectedDesignId('new');
+                      setSelectedProjectId(selectedProjectId);
+                    }}
+                    className="px-6 py-3 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-xl hover:shadow-lg hover:shadow-collab-500/50 transition-all flex items-center gap-2 font-semibold"
+                  >
+                    <Plus className="w-5 h-5" />
+                    New Design
+                  </button>
+                )}
+              </>
             ) : (
               <>
                 <button
@@ -451,19 +484,66 @@ export default function Dashboard() {
             </div>
           )
         ) : selectedTab === 'designs' ? (
-          designs.length === 0 ? (
+          selectedDesignId ? (
+            <div className="fixed inset-0 z-50 bg-gray-900">
+              <div className="h-full flex flex-col">
+                <div className="p-4 border-b border-gray-700/50 flex items-center justify-between bg-gray-800">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Palette className="w-5 h-5 text-collab-400" />
+                    Design Workspace
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setSelectedDesignId(undefined);
+                      setSelectedProjectId(undefined);
+                      loadData();
+                    }}
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  {selectedProjectId && (
+                    <DesignCanvas
+                      projectId={selectedProjectId}
+                      designId={selectedDesignId === 'new' ? undefined : selectedDesignId}
+                      onClose={() => {
+                        setSelectedDesignId(undefined);
+                        setSelectedProjectId(undefined);
+                        loadData();
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : selectedProjectId ? (
+            <DesignList
+              projectId={selectedProjectId}
+              onSelectDesign={(id) => {
+                setSelectedDesignId(id);
+              }}
+              onCreateNew={() => {
+                setSelectedDesignId('new');
+              }}
+            />
+          ) : designs.length === 0 ? (
             <div className="text-center py-12">
               <Palette className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
               <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">No designs yet</p>
-              <p className="text-gray-400 dark:text-gray-500 text-sm">Create your first design in a project!</p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm">Select a project above to create your first design!</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {designs.map((design) => (
-                <Link
+                <button
                   key={design.id}
-                  to={`/project/${design.projectId}?design=${design.id}`}
-                  className="bg-dark-surface/90 backdrop-blur-xl border-2 border-gray-700/50 rounded-xl shadow-lg hover:shadow-2xl hover:border-collab-500/50 transition-all duration-200 p-6 h-full flex flex-col"
+                  onClick={() => {
+                    setSelectedProjectId(design.projectId);
+                    setSelectedDesignId(design.id);
+                  }}
+                  className="bg-dark-surface/90 backdrop-blur-xl border-2 border-gray-700/50 rounded-xl shadow-lg hover:shadow-2xl hover:border-collab-500/50 transition-all duration-200 p-6 h-full flex flex-col text-left"
                 >
                   <div className="aspect-video bg-gray-800/50 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
                     {design.thumbnail ? (
@@ -485,7 +565,7 @@ export default function Dashboard() {
                       {new Date(design.updatedAt).toLocaleDateString()}
                     </span>
                   </div>
-                </Link>
+                </button>
               ))}
             </div>
           )

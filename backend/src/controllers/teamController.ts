@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AuthRequest } from '../middleware/auth.js';
 import { createError } from '../middleware/errorHandler.js';
+import { emailService } from '../services/emailService.js';
 
 const prisma = new PrismaClient();
 
@@ -233,11 +234,20 @@ export class TeamController {
         throw createError('User ID required', 400);
       }
 
-      // Check if user is leader
+      // Check if user is leader and get team with leader info
       const team = await prisma.team.findFirst({
         where: {
           id,
           leaderId: req.userId,
+        },
+        include: {
+          leader: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
         },
       });
 
@@ -252,6 +262,20 @@ export class TeamController {
 
       if (!user) {
         throw createError('User not found', 404);
+      }
+
+      // Check if user is already a member
+      const existingMember = await prisma.teamMember.findUnique({
+        where: {
+          teamId_userId: {
+            teamId: id,
+            userId,
+          },
+        },
+      });
+
+      if (existingMember) {
+        throw createError('User is already a member of this team', 409);
       }
 
       const member = await prisma.teamMember.create({
@@ -273,9 +297,23 @@ export class TeamController {
         },
       });
 
+      // Send invitation email
+      try {
+        await emailService.sendTeamInvitationEmail(
+          user.email,
+          team.name,
+          team.leader.name,
+          role
+        );
+      } catch (emailError) {
+        console.error('Failed to send team invitation email:', emailError);
+        // Don't fail the request if email fails
+      }
+
       res.status(201).json({
         success: true,
         data: { member },
+        message: 'Member added successfully. Invitation email sent.',
       });
     } catch (error) {
       next(error);

@@ -18,10 +18,12 @@ interface MonacoEditorProps {
   onChange?: (content: string) => void;
   projectId: string;
   roomId: string;
+  editorRef?: React.MutableRefObject<any>;
 }
 
-export default function MonacoEditor({ file, onSave, onChange, projectId, roomId }: MonacoEditorProps) {
-  const editorRef = useRef<any>(null);
+export default function MonacoEditor({ file, onSave, onChange, projectId, roomId, editorRef: externalEditorRef }: MonacoEditorProps) {
+  const internalEditorRef = useRef<any>(null);
+  const editorRef = externalEditorRef || internalEditorRef;
   const { user } = useAuthStore();
   const socket = getSocket();
   const { addCursor, updateCursor, removeCursor } = useSessionStore();
@@ -92,6 +94,10 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
 
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
+    // Also update external ref if provided
+    if (externalEditorRef) {
+      externalEditorRef.current = editor;
+    }
 
     // Configure editor
     editor.updateOptions({

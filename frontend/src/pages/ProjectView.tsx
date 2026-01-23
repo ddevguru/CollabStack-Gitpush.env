@@ -17,10 +17,9 @@ import RunButton from './components/RunButton';
 import ExtensionsPanel from './components/ExtensionsPanel';
 import UserPresencePanel from './components/UserPresencePanel';
 import ExecutionDashboard from './components/ExecutionDashboard';
-import DesignCanvas from './components/DesignCanvas';
-import DesignList from './components/DesignList';
 import { Calendar } from '@/components/nexus/Calendar';
-import { ArrowLeft, BarChart3, Bot, Package, Calendar as CalendarIcon, X, Code2, Palette } from 'lucide-react';
+import { ArrowLeft, BarChart3, Bot, Package, Calendar as CalendarIcon, X, Code2, MessageCircle } from 'lucide-react';
+import { shareCodeToWhatsApp, getSelectedCodeFromMonaco, getFullCodeFromMonaco, detectLanguageFromFileName } from '@/utils/whatsappShare';
 
 interface Project {
   id: string;
@@ -73,17 +72,8 @@ export default function ProjectView() {
   const [currentCode, setCurrentCode] = useState<string>('');
   const [autoPushTimer, setAutoPushTimer] = useState<NodeJS.Timeout | null>(null);
   const [currentRunId, setCurrentRunId] = useState<string | undefined>();
-  const [showDesigns, setShowDesigns] = useState(false);
-  const [selectedDesignId, setSelectedDesignId] = useState<string | undefined>();
-
-  // Check if design ID is in URL params
-  useEffect(() => {
-    const designParam = searchParams.get('design');
-    if (designParam && project) {
-      setShowDesigns(true);
-      setSelectedDesignId(designParam);
-    }
-  }, [searchParams, project]);
+  const monacoEditorRef = useRef<any>(null);
+  const [showWhatsAppShareMenu, setShowWhatsAppShareMenu] = useState(false);
 
   useEffect(() => {
     loadProject();
@@ -292,6 +282,66 @@ export default function ProjectView() {
                   {selectedFile.path}
                 </span>
                 <RunButton file={selectedFile} projectId={project.id} />
+                <div className="relative">
+                  <button
+                    onClick={() => setShowWhatsAppShareMenu(!showWhatsAppShareMenu)}
+                    className="px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50 transition-all"
+                    title="Share Code to WhatsApp"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Share
+                  </button>
+                  {showWhatsAppShareMenu && (
+                    <div className="absolute top-full left-0 mt-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 min-w-[200px]">
+                      <button
+                        onClick={() => {
+                          try {
+                            const selectedCode = getSelectedCodeFromMonaco(monacoEditorRef);
+                            if (selectedCode) {
+                              shareCodeToWhatsApp({
+                                code: selectedCode,
+                                fileName: selectedFile.path,
+                                language: detectLanguageFromFileName(selectedFile.path),
+                                shareType: 'selected',
+                              });
+                              toast.success('Opening WhatsApp with selected code...');
+                            } else {
+                              toast.error('Please select code to share');
+                            }
+                          } catch (error: any) {
+                            toast.error(error.message || 'Failed to share code');
+                          }
+                          setShowWhatsAppShareMenu(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 transition-colors flex items-center gap-2"
+                      >
+                        <MessageCircle className="w-4 h-4 text-green-400" />
+                        Share Selected Code
+                      </button>
+                      <button
+                        onClick={() => {
+                          try {
+                            const fullCode = getFullCodeFromMonaco(monacoEditorRef) || selectedFile.content;
+                            shareCodeToWhatsApp({
+                              code: fullCode,
+                              fileName: selectedFile.path,
+                              language: detectLanguageFromFileName(selectedFile.path),
+                              shareType: 'full',
+                            });
+                            toast.success('Opening WhatsApp with full file...');
+                          } catch (error: any) {
+                            toast.error(error.message || 'Failed to share code');
+                          }
+                          setShowWhatsAppShareMenu(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 transition-colors flex items-center gap-2 border-t border-gray-700"
+                      >
+                        <MessageCircle className="w-4 h-4 text-green-400" />
+                        Share Full File
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -367,20 +417,6 @@ export default function ProjectView() {
               <BarChart3 className="w-4 h-4" />
               Metrics
             </button>
-            <button
-              onClick={() => {
-                setShowDesigns(!showDesigns);
-                setSelectedDesignId(undefined);
-              }}
-              className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-all ${
-                showDesigns
-                  ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
-                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-700/50 border border-gray-700/50'
-              }`}
-            >
-              <Palette className="w-4 h-4" />
-              Design
-            </button>
           </div>
         </div>
 
@@ -413,6 +449,7 @@ export default function ProjectView() {
                 onChange={(content) => setCurrentCode(content)}
                 projectId={project.id}
                 roomId={project.roomId}
+                editorRef={monacoEditorRef}
               />
             </div>
           ) : (
@@ -455,33 +492,6 @@ export default function ProjectView() {
         </motion.div>
       )}
 
-      {/* Design Panel */}
-      {showDesigns && (
-        <motion.div
-          initial={{ x: 400 }}
-          animate={{ x: 0 }}
-          className="w-[800px] border-l border-gray-700/50 flex-shrink-0 flex flex-col bg-gray-900"
-        >
-          {selectedDesignId ? (
-            <div className="flex-1 flex flex-col min-h-0">
-              <DesignCanvas
-                projectId={project.id}
-                designId={selectedDesignId === 'new' ? undefined : selectedDesignId}
-                onClose={() => setSelectedDesignId(undefined)}
-              />
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto">
-              <DesignList
-                projectId={project.id}
-                onSelectDesign={(id) => setSelectedDesignId(id)}
-                onNewDesign={() => setSelectedDesignId(undefined)}
-                onCreateNew={() => setSelectedDesignId('new')}
-              />
-            </div>
-          )}
-        </motion.div>
-      )}
 
       {/* Extensions Panel */}
       {showExtensions && (

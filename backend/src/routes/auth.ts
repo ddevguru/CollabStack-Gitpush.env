@@ -28,6 +28,43 @@ router.post(
 );
 
 router.post(
+  '/verify-otp',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('otp').isLength({ min: 6, max: 6 }),
+  ],
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        throw createError('Validation failed', 400);
+      }
+      await authController.verifyOTP(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post(
+  '/resend-otp',
+  [
+    body('email').isEmail().normalizeEmail(),
+  ],
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        throw createError('Validation failed', 400);
+      }
+      await authController.resendOTP(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post(
   '/login',
   [
     body('email').isEmail().normalizeEmail(),
