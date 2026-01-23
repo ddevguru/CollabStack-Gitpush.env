@@ -197,19 +197,30 @@ export default function Dashboard() {
       toast.error('Please enter an email address');
       return;
     }
+    
+    const emailToSearch = memberEmail.trim().toLowerCase();
+    
     try {
-      // Search for user by email
-      const searchResponse = await api.get(`/users/search?email=${encodeURIComponent(memberEmail)}`);
-      const users = searchResponse.data.data.users;
+      // Search for user by email (case-insensitive)
+      const searchResponse = await api.get(`/users/search?email=${encodeURIComponent(emailToSearch)}`);
+      const users = searchResponse.data?.data?.users || [];
       
       if (users.length === 0) {
-        toast.error('User not found. Please make sure the user is registered.');
+        toast.error('User not found. Please make sure the user is registered with this email address.');
         return;
       }
 
-      const foundUser = users.find((u: any) => u.email.toLowerCase() === memberEmail.toLowerCase());
+      // Find exact match (case-insensitive)
+      const foundUser = users.find((u: any) => u.email.toLowerCase() === emailToSearch);
       if (!foundUser) {
         toast.error('User not found. Please make sure the email is correct.');
+        return;
+      }
+
+      // Check if user is already a member
+      const team = teams.find(t => t.id === teamId);
+      if (team?.members?.some(m => m.user.id === foundUser.id)) {
+        toast.error('User is already a member of this team');
         return;
       }
 
@@ -218,12 +229,22 @@ export default function Dashboard() {
         role: 'member',
         pushMode: 'MANUAL',
       });
-      toast.success('Member added successfully');
+      
+      toast.success(`Member ${foundUser.name} added successfully`);
       setShowAddMember(false);
       setMemberEmail('');
       loadData();
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to add member. User must be registered first.');
+      console.error('Error adding member:', error);
+      const errorMessage = error.response?.data?.error?.message || error.message;
+      
+      if (errorMessage.includes('already a member')) {
+        toast.error('User is already a member of this team');
+      } else if (errorMessage.includes('not found')) {
+        toast.error('User not found. Please make sure the user is registered with this email address.');
+      } else {
+        toast.error(errorMessage || 'Failed to add member. Please try again.');
+      }
     }
   };
 
@@ -899,20 +920,20 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
-            <div className="flex justify-end space-x-2">
+            <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => {
                   setShowAddMember(false);
                   setSelectedTeam(null);
                   setMemberEmail('');
                 }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleAddMember(selectedTeam.id)}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                className="px-4 py-2 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-md hover:shadow-lg hover:shadow-collab-500/50 transition-all font-semibold"
               >
                 Add Member
               </button>

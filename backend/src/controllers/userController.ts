@@ -21,6 +21,7 @@ export class UserController {
           avatar: true,
           githubUsername: true,
           authProviders: true,
+          googleToken: true, // Check if Google is connected
           createdAt: true,
         },
       });
@@ -29,9 +30,16 @@ export class UserController {
         throw createError('User not found', 404);
       }
 
+      // Convert to response format (don't expose token, just connection status)
+      const userResponse = {
+        ...user,
+        hasGoogleAccount: !!user.googleToken,
+        googleToken: undefined, // Don't expose token
+      };
+
       res.json({
         success: true,
-        data: { user },
+        data: { user: userResponse },
       });
     } catch (error) {
       next(error);
@@ -84,10 +92,13 @@ export class UserController {
         throw createError('Email query parameter required', 400);
       }
 
+      // Normalize email for search (trim and lowercase)
+      const normalizedEmail = email.trim().toLowerCase();
+      
       const users = await prisma.user.findMany({
         where: {
           email: {
-            contains: email,
+            contains: normalizedEmail,
             mode: 'insensitive',
           },
         },

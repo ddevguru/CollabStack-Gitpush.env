@@ -299,17 +299,17 @@ export default function ProjectView() {
                   {showWhatsAppShareMenu && (
                     <div className="absolute top-full left-0 mt-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 min-w-[200px]">
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           try {
                             const selectedCode = getSelectedCodeFromMonaco(monacoEditorRef);
                             if (selectedCode) {
-                              shareCodeToWhatsApp({
+                              await shareCodeToWhatsApp({
                                 code: selectedCode,
                                 fileName: selectedFile.path,
                                 language: detectLanguageFromFileName(selectedFile.path),
                                 shareType: 'selected',
                               });
-                              toast.success('Opening WhatsApp with selected code...');
+                              toast.success('ZIP file downloaded! Opening WhatsApp...');
                             } else {
                               toast.error('Please select code to share');
                             }
@@ -324,16 +324,16 @@ export default function ProjectView() {
                         Share Selected Code
                       </button>
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           try {
                             const fullCode = getFullCodeFromMonaco(monacoEditorRef) || selectedFile.content;
-                            shareCodeToWhatsApp({
+                            await shareCodeToWhatsApp({
                               code: fullCode,
                               fileName: selectedFile.path,
                               language: detectLanguageFromFileName(selectedFile.path),
                               shareType: 'full',
                             });
-                            toast.success('Opening WhatsApp with full file...');
+                            toast.success('File downloaded! Opening WhatsApp...');
                           } catch (error: any) {
                             toast.error(error.message || 'Failed to share code');
                           }

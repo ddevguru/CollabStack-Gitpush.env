@@ -1,27 +1,50 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useSessionStore, CURSOR_COLORS } from '../../stores/sessionStore';
 import * as monaco from 'monaco-editor';
 
 interface LiveCursorsProps {
   editorRef: any;
+  currentFileId?: string;
+  currentFilePath?: string;
 }
 
-export const LiveCursors = ({ editorRef }: LiveCursorsProps) => {
+export const LiveCursors = ({ editorRef, currentFileId, currentFilePath }: LiveCursorsProps) => {
   const cursors = useSessionStore((state) => state.cursors);
   const [cursorPositions, setCursorPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  
+  // Memoize validCursors to prevent infinite loops
+  const validCursors = useMemo(() => {
+    return cursors.filter(c => {
+      // Must match current file
+      if (currentFileId && c.fileId !== currentFileId) return false;
+      if (currentFilePath && c.filePath && c.filePath !== currentFilePath) return false;
+      // Must have valid position
+      return c.position && c.position.line > 0 && c.position.column > 0;
+    });
+  }, [cursors, currentFileId, currentFilePath]);
 
   useEffect(() => {
-    if (!editorRef?.current || cursors.length === 0) return;
+    if (!editorRef?.current || validCursors.length === 0) {
+      setCursorPositions(new Map());
+      return;
+    }
 
     const editor = editorRef.current;
     const updatePositions = () => {
       const positions = new Map<string, { x: number; y: number }>();
       
-      cursors.forEach((cursor) => {
+      validCursors.forEach((cursor) => {
         try {
           // Convert Monaco editor coordinates to pixel coordinates
-          const position = new monaco.Position(cursor.position.line, cursor.position.column);
+          if (!cursor.position || !cursor.position.line || !cursor.position.column) {
+            return;
+          }
+          
+          const position = new monaco.Position(
+            Math.max(1, cursor.position.line), 
+            Math.max(1, cursor.position.column)
+          );
           const coords = editor.getScrolledVisiblePosition(position);
           
           if (coords) {
@@ -29,13 +52,21 @@ export const LiveCursors = ({ editorRef }: LiveCursorsProps) => {
             const x = coords.left + layoutInfo.contentLeft;
             const y = coords.top + layoutInfo.contentTop;
             positions.set(cursor.userId, { x, y });
+          } else {
+            // Fallback if position not visible
+            const fontSize = editor.getOption(monaco.editor.EditorOption.fontSize) || 14;
+            const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight) || fontSize * 1.5;
+            const x = cursor.position.column * (fontSize * 0.6);
+            const y = (cursor.position.line - 1) * lineHeight;
+            positions.set(cursor.userId, { x, y });
           }
         } catch (error) {
+          console.error('Error calculating cursor position:', error);
           // Fallback to approximate positioning
           const fontSize = editor.getOption(monaco.editor.EditorOption.fontSize) || 14;
           const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight) || fontSize * 1.5;
-          const x = cursor.position.column * (fontSize * 0.6);
-          const y = (cursor.position.line - 1) * lineHeight;
+          const x = (cursor.position?.column || 1) * (fontSize * 0.6);
+          const y = ((cursor.position?.line || 1) - 1) * lineHeight;
           positions.set(cursor.userId, { x, y });
         }
       });
@@ -58,13 +89,13 @@ export const LiveCursors = ({ editorRef }: LiveCursorsProps) => {
       disposables.forEach(d => d.dispose());
       clearInterval(interval);
     };
-  }, [editorRef, cursors]);
+  }, [editorRef, validCursors]);
 
-  if (!editorRef?.current || cursors.length === 0) return null;
+  if (!editorRef?.current || validCursors.length === 0) return null;
 
   return (
     <div className="absolute inset-0 pointer-events-none z-50">
-      {cursors.map((cursor) => {
+      {validCursors.map((cursor) => {
         const color = CURSOR_COLORS[cursor.userId.charCodeAt(0) % CURSOR_COLORS.length];
         const position = cursorPositions.get(cursor.userId);
         

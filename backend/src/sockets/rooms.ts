@@ -98,14 +98,22 @@ export const setupRoomHandlers = (io: Server, socket: Socket) => {
         },
       });
 
+      const usersList = sessions.map((s: { user: { id: string; name: string; avatar: string | null }; activeFile: string | null; cursorPos: unknown }) => ({
+        userId: s.user.id,
+        userName: s.user.name,
+        avatar: s.user.avatar,
+        activeFile: s.activeFile,
+        cursorPos: s.cursorPos,
+      }));
+
+      // Send to the user who just joined
       socket.emit('room:users', {
-        users: sessions.map((s: { user: { id: string; name: string; avatar: string | null }; activeFile: string | null; cursorPos: unknown }) => ({
-          userId: s.user.id,
-          userName: s.user.name,
-          avatar: s.user.avatar,
-          activeFile: s.activeFile,
-          cursorPos: s.cursorPos,
-        })),
+        users: usersList,
+      });
+
+      // Also broadcast updated users list to all users in room
+      io.to(roomId).emit('room:users', {
+        users: usersList,
       });
     } catch (error: any) {
       socket.emit('error', { message: error.message });
@@ -150,6 +158,7 @@ export const setupRoomHandlers = (io: Server, socket: Socket) => {
     // Notify others
     socket.to(roomId).emit('file:opened', {
       userId,
+      userName: (socket as any).user.name,
       filePath,
     });
   });

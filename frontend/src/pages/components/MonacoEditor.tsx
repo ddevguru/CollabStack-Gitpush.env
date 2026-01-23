@@ -32,12 +32,17 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
     if (!socket || !editorRef.current) return;
 
     const handleCursorUpdate = (data: any) => {
-      // Only show cursors for other users on the same file
-      if (data.userId === user?.id || data.filePath !== file.path) {
-        // Remove cursor if user switched files
-        if (data.filePath !== file.path) {
-          removeCursor(data.userId);
-        }
+      // Skip own cursor updates
+      if (data.userId === user?.id) return;
+      
+      // Remove cursor if user switched to a different file
+      if (data.filePath && data.filePath !== file.path) {
+        removeCursor(data.userId);
+        return;
+      }
+      
+      // Only show cursors for users on the same file
+      if (data.filePath !== file.path) {
         return;
       }
       
@@ -46,15 +51,15 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
         userId: data.userId,
         userName: data.userName || 'Unknown',
         color: '',
-        position: data.position,
+        position: data.position || { line: 1, column: 1 },
         fileId: file.id,
         filePath: data.filePath || file.path,
       };
       
-      // Check if cursor already exists
+      // Check if cursor already exists for this file
       const existingCursor = useSessionStore.getState().cursors.find(c => c.userId === data.userId && c.fileId === file.id);
       if (existingCursor) {
-        updateCursor(data.userId, data.position);
+        updateCursor(data.userId, cursor.position);
       } else {
         addCursor(cursor);
       }
@@ -83,7 +88,7 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
     };
   }, [socket, file, user, addCursor, updateCursor, removeCursor]);
 
-  // Clean up cursors when file changes
+  // Clean up cursors when file changes - remove cursors from other files
   useEffect(() => {
     const currentCursors = useSessionStore.getState().cursors;
     currentCursors.forEach(cursor => {
@@ -91,7 +96,16 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
         removeCursor(cursor.userId);
       }
     });
-  }, [file.id, removeCursor]);
+    
+    // Also emit file:open when file changes to notify others
+    if (socket && user) {
+      socket.emit('file:open', {
+        roomId,
+        projectId,
+        filePath: file.path,
+      });
+    }
+  }, [file.id, file.path, socket, roomId, projectId, user, removeCursor]);
 
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
@@ -207,20 +221,34 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
       onSave(content);
     });
 
+    // Track last emitted position to avoid spam
+    let lastEmittedPosition = { line: 0, column: 0 };
+    let cursorUpdateTimeout: NodeJS.Timeout;
+
     // Listen for cursor changes
     editor.onDidChangeCursorPosition((e: any) => {
       if (socket && user) {
-        socket.emit('cursor:update', {
-          roomId,
-          projectId,
-          filePath: file.path,
-          position: {
-            line: e.position.lineNumber,
-            column: e.position.column,
-          },
-        });
+        const newPosition = {
+          line: e.position.lineNumber,
+          column: e.position.column,
+        };
+
+        // Throttle cursor updates (only emit if position changed significantly or after delay)
+        clearTimeout(cursorUpdateTimeout);
+        cursorUpdateTimeout = setTimeout(() => {
+          // Only emit if position changed
+          if (lastEmittedPosition.line !== newPosition.line || lastEmittedPosition.column !== newPosition.column) {
+            socket.emit('cursor:update', {
+              roomId,
+              projectId,
+              filePath: file.path,
+              position: newPosition,
+            });
+            lastEmittedPosition = newPosition;
+          }
+        }, 50); // Throttle to max 20 updates per second
         
-        // Also emit file:open to notify others which file we're editing
+        // Always emit file:open when cursor moves (to update active file)
         socket.emit('file:open', {
           roomId,
           projectId,
@@ -425,7 +453,7 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
           wordBasedSuggestions: 'allDocuments',
         }}
       />
-      <LiveCursors editorRef={editorRef} />
+      <LiveCursors editorRef={editorRef} currentFileId={file.id} currentFilePath={file.path} />
     </div>
   );
 }

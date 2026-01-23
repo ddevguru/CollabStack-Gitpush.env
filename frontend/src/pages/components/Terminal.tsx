@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { getSocket } from '@/services/socket';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { Play, Trash2, Copy, Terminal as TerminalIcon } from 'lucide-react';
+import { Play, Trash2, Copy, Plus, X } from 'lucide-react';
 
 interface TerminalProps {
   projectId: string;
@@ -21,33 +21,81 @@ interface Run {
   createdAt: string;
 }
 
+interface TerminalTab {
+  id: string;
+  name: string;
+  runs: Run[];
+  commandHistory: string[];
+  currentCommand: string;
+  isRunning: boolean;
+  historyIndex: number;
+}
+
 export default function Terminal({ projectId, roomId }: TerminalProps) {
+  const [tabs, setTabs] = useState<TerminalTab[]>([
+    { id: '1', name: 'Terminal 1', runs: [], commandHistory: [], currentCommand: '', isRunning: false, historyIndex: -1 }
+  ]);
+  const [activeTabId, setActiveTabId] = useState<string>('1');
   const [language, setLanguage] = useState('javascript');
   const [code, setCode] = useState('');
   const [stdin, setStdin] = useState('');
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [currentCommand, setCurrentCommand] = useState('');
   const [showCodeEditor, setShowCodeEditor] = useState(true);
   const [resourceType, setResourceType] = useState<'CPU' | 'GPU'>('CPU');
   const socket = getSocket();
-  const outputEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const outputEndRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   const terminalRef = useRef<HTMLDivElement>(null);
+
+  const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
+  const runs = activeTab.runs;
+  const commandHistory = activeTab.commandHistory;
+  const currentCommand = activeTab.currentCommand;
+  const isRunning = activeTab.isRunning;
+  const historyIndex = activeTab.historyIndex;
+
+  const updateTab = (tabId: string, updates: Partial<TerminalTab>) => {
+    setTabs(prev => prev.map(tab => 
+      tab.id === tabId ? { ...tab, ...updates } : tab
+    ));
+  };
+
+  const createNewTab = () => {
+    const newTabId = `${Date.now()}`;
+    const newTab: TerminalTab = {
+      id: newTabId,
+      name: `Terminal ${tabs.length + 1}`,
+      runs: [],
+      commandHistory: [],
+      currentCommand: '',
+      isRunning: false,
+      historyIndex: -1,
+    };
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTabId);
+  };
+
+  const closeTab = (tabId: string) => {
+    if (tabs.length === 1) {
+      toast.error('Cannot close the last terminal tab');
+      return;
+    }
+    setTabs(prev => prev.filter(tab => tab.id !== tabId));
+    if (activeTabId === tabId) {
+      const remainingTabs = tabs.filter(tab => tab.id !== tabId);
+      setActiveTabId(remainingTabs[0]?.id || '1');
+    }
+  };
 
   useEffect(() => {
     if (!socket) return;
 
     const handleRunStarted = (data: any) => {
-      setIsRunning(true);
+      updateTab(activeTabId, { isRunning: true });
       addOutput(`[${new Date().toLocaleTimeString()}] Running ${data.language} code...\n`, 'info');
     };
 
     const handleRunCompleted = (data: { run: Run }) => {
-      setIsRunning(false);
-      setRuns((prev) => [data.run, ...prev]);
+      updateTab(activeTabId, { isRunning: false });
       if (data.run.output) {
         addOutput(data.run.output, 'output');
       }
@@ -79,23 +127,26 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
       socket.off('run:completed', handleRunCompleted);
       socket.off('terminal:output', handleTerminalOutput);
     };
-  }, [socket, projectId]);
+  }, [socket, projectId, activeTabId]);
 
   useEffect(() => {
-    outputEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [runs]);
+    const ref = outputEndRefs.current.get(activeTabId);
+    ref?.scrollIntoView({ behavior: 'smooth' });
+  }, [runs, activeTabId]);
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
+    const ref = inputRefs.current.get(activeTabId);
+    if (ref) {
+      ref.focus();
     }
-  }, []);
+  }, [activeTabId]);
 
   const getPrompt = () => {
     return `$ `;
   };
 
-  const addOutput = (text: string, type: 'output' | 'error' | 'info' | 'prompt' = 'output') => {
+  const addOutput = (text: string, type: 'output' | 'error' | 'info' | 'prompt' = 'output', tabId?: string) => {
+    const targetTabId = tabId || activeTabId;
     const newRun: Run = {
       id: `${Date.now()}-${Math.random()}`,
       language,
@@ -105,10 +156,10 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
       error: type === 'error' ? text : undefined,
       createdAt: new Date().toISOString(),
     };
-    setRuns((prev) => [...prev, newRun]);
-    // Auto scroll to bottom
+    updateTab(targetTabId, { runs: [...tabs.find(t => t.id === targetTabId)!.runs, newRun] });
     setTimeout(() => {
-      outputEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const ref = outputEndRefs.current.get(targetTabId);
+      ref?.scrollIntoView({ behavior: 'smooth' });
     }, 10);
   };
 
@@ -119,9 +170,11 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
     }
 
     addOutput(`${getPrompt()}${command}\n`, 'prompt');
-    setCommandHistory((prev) => [...prev, command]);
-    setHistoryIndex(-1);
-    setCurrentCommand('');
+    updateTab(activeTabId, {
+      commandHistory: [...commandHistory, command],
+      currentCommand: '',
+      historyIndex: -1,
+    });
 
     const parts = command.trim().split(' ');
     const cmd = parts[0].toLowerCase();
@@ -129,7 +182,7 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
     switch (cmd) {
       case 'clear':
       case 'cls':
-        setRuns([]);
+        updateTab(activeTabId, { runs: [] });
         addOutput(`${getPrompt()}`, 'prompt');
         break;
       case 'run':
@@ -144,24 +197,25 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
         addOutput(`Available commands:
   clear, cls    - Clear terminal
   run           - Run code from editor
-  lang <name>   - Set language (javascript, typescript, python, java, cpp, c, go, rust, php, ruby, swift, kotlin, dart, r, scala, bash, powershell)
+  lang <name>   - Set language
   code          - Show current code
   history       - Show command history
-  gpu           - Switch to GPU execution (uses compute credits)
-  cpu           - Switch to CPU execution (free)
+  gpu           - Switch to GPU execution
+  cpu           - Switch to CPU execution
   credits       - Show compute credits balance
+  npm, yarn, pip, node, python - Execute package manager/runtime commands
   help          - Show this help message
 `, 'info');
         addOutput(`${getPrompt()}`, 'prompt');
         break;
       case 'gpu':
         setResourceType('GPU');
-        addOutput('Switched to GPU execution mode (uses compute credits)\n', 'info');
+        addOutput('Switched to GPU execution mode\n', 'info');
         addOutput(`${getPrompt()}`, 'prompt');
         break;
       case 'cpu':
         setResourceType('CPU');
-        addOutput('Switched to CPU execution mode (free)\n', 'info');
+        addOutput('Switched to CPU execution mode\n', 'info');
         addOutput(`${getPrompt()}`, 'prompt');
         break;
       case 'credits':
@@ -169,8 +223,6 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
           const creditsRes = await api.get('/compute/credits');
           const credits = creditsRes.data.data.credits;
           addOutput(`\nCompute Credits Balance: ${credits.balance.toFixed(2)}\n`, 'info');
-          addOutput(`Total Earned: ${credits.totalEarned.toFixed(2)}\n`, 'info');
-          addOutput(`Total Spent: ${credits.totalSpent.toFixed(2)}\n`, 'info');
         } catch (error) {
           addOutput('Failed to fetch credits\n', 'error');
         }
@@ -193,10 +245,66 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
         addOutput(`\nCommand history:\n${commandHistory.slice(-10).join('\n')}\n`, 'info');
         addOutput(`${getPrompt()}`, 'prompt');
         break;
+      case 'npm':
+      case 'yarn':
+      case 'pnpm':
+      case 'pip':
+      case 'pip3':
+      case 'python':
+      case 'node':
+      case 'python3':
+        await handlePackageCommand(command);
+        break;
       default:
         addOutput(`Command not found: ${cmd}. Type 'help' for available commands.\n`, 'error');
         addOutput(`${getPrompt()}`, 'prompt');
     }
+  };
+
+  const handlePackageCommand = async (command: string) => {
+    // Check if current tab is busy
+    if (isRunning) {
+      // Create new tab if current is busy
+      createNewTab();
+      const newTabId = `${Date.now()}`;
+      addOutput(`Previous command is running. Opening new terminal...\n`, 'info', newTabId);
+      addOutput(`Executing: ${command}\n`, 'info', newTabId);
+      updateTab(newTabId, { isRunning: true });
+      await executeCommandInTab(command, newTabId);
+      return;
+    }
+
+    updateTab(activeTabId, { isRunning: true });
+    addOutput(`Executing: ${command}\n`, 'info');
+    await executeCommandInTab(command, activeTabId);
+  };
+
+  const executeCommandInTab = async (command: string, tabId: string) => {
+    try {
+      const response = await api.post(`/projects/${projectId}/execute`, {
+        command: command.trim(),
+      });
+      
+      if (response.data.success) {
+        const output = response.data.data.output || '';
+        const error = response.data.data.error || '';
+        
+        if (output) {
+          addOutput(output, 'output', tabId);
+        }
+        if (error) {
+          addOutput(error, 'error', tabId);
+        }
+      } else {
+        addOutput(`Failed to execute command\n`, 'error', tabId);
+      }
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error?.message || error.message || 'Failed to execute command';
+      addOutput(`Error: ${errorMsg}\n`, 'error', tabId);
+    } finally {
+      updateTab(tabId, { isRunning: false });
+    }
+    addOutput(`${getPrompt()}`, 'prompt', tabId);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -207,19 +315,25 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
       e.preventDefault();
       if (commandHistory.length > 0) {
         const newIndex = historyIndex === -1 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1);
-        setHistoryIndex(newIndex);
-        setCurrentCommand(commandHistory[newIndex]);
+        updateTab(activeTabId, {
+          historyIndex: newIndex,
+          currentCommand: commandHistory[newIndex],
+        });
       }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (historyIndex !== -1) {
         const newIndex = historyIndex + 1;
         if (newIndex >= commandHistory.length) {
-          setHistoryIndex(-1);
-          setCurrentCommand('');
+          updateTab(activeTabId, {
+            historyIndex: -1,
+            currentCommand: '',
+          });
         } else {
-          setHistoryIndex(newIndex);
-          setCurrentCommand(commandHistory[newIndex]);
+          updateTab(activeTabId, {
+            historyIndex: newIndex,
+            currentCommand: commandHistory[newIndex],
+          });
         }
       }
     }
@@ -232,11 +346,9 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
     }
 
     try {
-      // Check if user wants to use compute credits for GPU execution
       const useGPU = resourceType === 'GPU';
       
       if (useGPU) {
-        // Create compute job
         const jobResponse = await api.post('/compute/jobs', {
           projectId,
           language,
@@ -246,11 +358,8 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
         });
         
         const job = jobResponse.data.data.job;
-        addOutput(`\n[Compute] Job ${job.id.substring(0, 8)} created. Status: ${job.status}\n`, 'info');
-        addOutput(`Credits used: ${job.creditsUsed.toFixed(2)}\n`, 'info');
-        addOutput(`Queueing for GPU execution...\n`, 'info');
+        addOutput(`\n[Compute] Job ${job.id.substring(0, 8)} created\n`, 'info');
         
-        // Poll for job status
         const pollInterval = setInterval(async () => {
           try {
             const statusResponse = await api.get(`/compute/jobs/${job.id}`);
@@ -258,13 +367,8 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
             
             if (updatedJob.status === 'COMPLETED') {
               clearInterval(pollInterval);
-              if (updatedJob.output) {
-                addOutput(updatedJob.output, 'output');
-              }
-              if (updatedJob.error) {
-                addOutput(updatedJob.error, 'error');
-              }
-              addOutput(`\nJob completed in ${updatedJob.computeHours.toFixed(2)} hours\n`, 'info');
+              if (updatedJob.output) addOutput(updatedJob.output, 'output');
+              if (updatedJob.error) addOutput(updatedJob.error, 'error');
               addOutput(`${getPrompt()}`, 'prompt');
             } else if (updatedJob.status === 'FAILED') {
               clearInterval(pollInterval);
@@ -276,7 +380,6 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
           }
         }, 2000);
       } else {
-        // Regular execution via socket or API
         if (socket) {
           socket.emit('run:request', {
             roomId,
@@ -301,7 +404,7 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
   };
 
   const clearTerminal = () => {
-    setRuns([]);
+    updateTab(activeTabId, { runs: [] });
     addOutput(`${getPrompt()}`, 'prompt');
   };
 
@@ -312,19 +415,56 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-200 font-mono text-sm">
+    <div className="flex flex-col h-full bg-black text-green-400 font-mono text-sm">
+      {/* Terminal Tabs */}
+      <div className="flex items-center gap-1 px-2 py-1 bg-gray-900 border-b border-gray-800 overflow-x-auto">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={`flex items-center gap-1 px-3 py-1 rounded-t cursor-pointer border-b-2 transition-colors ${
+              activeTabId === tab.id
+                ? 'bg-black border-green-500 text-green-400'
+                : 'bg-gray-800 border-transparent text-gray-500 hover:text-gray-300'
+            }`}
+            onClick={() => setActiveTabId(tab.id)}
+          >
+            <span className="text-xs whitespace-nowrap">{tab.name}</span>
+            {tab.isRunning && (
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            )}
+            {tabs.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(tab.id);
+                }}
+                className="ml-1 hover:text-red-400"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          onClick={createNewTab}
+          className="px-2 py-1 text-gray-500 hover:text-green-400 hover:bg-gray-800 rounded"
+          title="New Terminal"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+
       {/* Terminal Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-dark-surface/95 backdrop-blur-xl border-b border-gray-700/50 shadow-lg">
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center space-x-3">
-          <TerminalIcon className="w-5 h-5 text-collab-400" />
-          <span className="text-gray-300 text-xs font-semibold bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">
-            TERMINAL
+          <span className="text-green-400 text-xs font-semibold">
+            &gt;_ TERMINAL
           </span>
-          <div className="h-4 w-px bg-gray-700/50" />
+          <div className="h-4 w-px bg-gray-700" />
           <select
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
-            className="px-3 py-1.5 bg-gray-800/50 text-gray-200 border border-gray-700/50 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-transparent transition-all"
+            className="px-2 py-1 bg-gray-800 text-green-400 border border-gray-700 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
           >
             <option value="javascript">JavaScript</option>
             <option value="typescript">TypeScript</option>
@@ -348,21 +488,21 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
         <div className="flex items-center space-x-2">
           <button
             onClick={copyOutput}
-            className="p-2 hover:bg-gray-700/50 rounded-lg text-gray-400 hover:text-white transition-all"
+            className="p-1.5 hover:bg-gray-800 rounded text-gray-500 hover:text-green-400"
             title="Copy Output"
           >
-            <Copy className="w-4 h-4" />
+            <Copy className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={clearTerminal}
-            className="p-2 hover:bg-gray-700/50 rounded-lg text-gray-400 hover:text-red-400 transition-all"
+            className="p-1.5 hover:bg-gray-800 rounded text-gray-500 hover:text-red-400"
             title="Clear Terminal"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setShowCodeEditor(!showCodeEditor)}
-            className="px-3 py-1.5 text-xs bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 transition-all font-semibold"
+            className="px-2 py-1 text-xs bg-gray-800 text-green-400 rounded border border-gray-700 hover:bg-gray-700"
           >
             {showCodeEditor ? 'Hide Editor' : 'Show Editor'}
           </button>
@@ -372,51 +512,57 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
       {/* Terminal Output */}
       <div
         ref={terminalRef}
-        className="flex-1 overflow-y-auto p-4 space-y-1 font-mono text-sm bg-gray-900/50"
+        className="flex-1 overflow-y-auto p-4 space-y-1 font-mono text-sm bg-black"
         style={{ fontFamily: 'Consolas, "Courier New", monospace' }}
       >
         {runs.length === 0 && (
-          <div className="text-gray-400">
-            <div className="text-collab-400 font-semibold mb-2">CodeCompute Hub Terminal v1.0.0</div>
+          <div className="text-gray-500">
             <div>Type 'help' for available commands.</div>
-            <div className="mt-2 text-gray-300">{getPrompt()}</div>
+            <div className="mt-2 text-green-400">{getPrompt()}</div>
           </div>
         )}
         {runs.map((run, index) => (
           <div key={`${run.id}-${index}`} className="whitespace-pre-wrap break-words">
             {run.output && (
-              <div className="text-gray-200">{run.output}</div>
+              <div className="text-green-400">{run.output}</div>
             )}
             {run.error && (
-              <div className="text-red-400 font-semibold">{run.error}</div>
+              <div className="text-red-500">{run.error}</div>
             )}
             {!run.output && !run.error && run.status && (
               <div className={`text-xs ${
                 run.status === 'SUCCESS' ? 'text-green-400' :
-                run.status === 'ERROR' ? 'text-red-400' :
-                'text-yellow-400'
+                run.status === 'ERROR' ? 'text-red-500' :
+                'text-yellow-500'
               }`}>
                 [{run.status}]
               </div>
             )}
           </div>
         ))}
-        <div className="text-gray-300 mt-2 font-semibold">{getPrompt()}</div>
-        <div ref={outputEndRef} />
+        <div className="text-green-400 mt-2">{getPrompt()}</div>
+        <div 
+          ref={(el) => {
+            if (el) outputEndRefs.current.set(activeTabId, el);
+          }} 
+        />
       </div>
 
       {/* Command Input */}
-      <div className="border-t border-gray-700/50 bg-gray-800/50 backdrop-blur-xl px-4 py-3">
+      <div className="border-t border-gray-800 bg-gray-900 px-4 py-2">
         <div className="flex items-center">
-          <span className="text-collab-400 mr-2 font-semibold">{getPrompt()}</span>
+          <span className="text-green-400 mr-2">$</span>
           <input
-            ref={inputRef}
+            ref={(el) => {
+              if (el) inputRefs.current.set(activeTabId, el);
+            }}
             type="text"
             value={currentCommand}
-            onChange={(e) => setCurrentCommand(e.target.value)}
+            onChange={(e) => updateTab(activeTabId, { currentCommand: e.target.value })}
             onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent text-gray-200 outline-none placeholder-gray-500"
-            placeholder="Enter command..."
+            className="flex-1 bg-transparent text-green-400 outline-none placeholder-gray-600"
+            placeholder={isRunning ? "Command running..." : "Enter command..."}
+            disabled={isRunning}
             autoFocus
           />
         </div>
@@ -424,17 +570,17 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
 
       {/* Code Editor Section */}
       {showCodeEditor && (
-        <div className="border-t border-gray-700/50 bg-gray-900/50 backdrop-blur-xl">
-          <div className="flex items-center justify-between px-4 py-3 bg-gray-800/50 border-b border-gray-700/50">
-            <span className="text-xs text-gray-400 font-semibold">CODE EDITOR</span>
+        <div className="border-t border-gray-800 bg-gray-900">
+          <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-800">
+            <span className="text-xs text-gray-500">CODE EDITOR</span>
             <button
               onClick={handleRun}
               disabled={isRunning || !code.trim()}
-              className="px-4 py-2 text-xs bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all font-semibold"
+              className="px-3 py-1 text-xs bg-gray-700 text-green-400 rounded border border-gray-600 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isRunning ? (
                 <>
-                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                  <div className="animate-spin rounded-full h-2 w-2 border-b border-green-400"></div>
                   Running...
                 </>
               ) : (
@@ -445,26 +591,26 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
               )}
             </button>
           </div>
-          <div className="p-2 space-y-2">
+          <div className="p-3 space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-xs text-[#858585] mb-1 block">Execution Mode:</label>
+              <label className="text-xs text-gray-500">Execution Mode:</label>
               <div className="flex gap-2">
                 <button
                   onClick={() => setResourceType('CPU')}
-                  className={`px-3 py-1.5 text-xs rounded-lg transition-all ${
+                  className={`px-2 py-1 text-xs rounded border ${
                     resourceType === 'CPU'
-                      ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
-                      : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50 border border-gray-700/50'
+                      ? 'bg-gray-700 text-green-400 border-green-500'
+                      : 'bg-gray-800 text-gray-500 border-gray-700 hover:bg-gray-700'
                   }`}
                 >
                   CPU (Free)
                 </button>
                 <button
                   onClick={() => setResourceType('GPU')}
-                  className={`px-3 py-1.5 text-xs rounded-lg transition-all ${
+                  className={`px-2 py-1 text-xs rounded border ${
                     resourceType === 'GPU'
-                      ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
-                      : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50 border border-gray-700/50'
+                      ? 'bg-gray-700 text-green-400 border-green-500'
+                      : 'bg-gray-800 text-gray-500 border-gray-700 hover:bg-gray-700'
                   }`}
                 >
                   GPU (Credits)
@@ -472,21 +618,21 @@ export default function Terminal({ projectId, roomId }: TerminalProps) {
               </div>
             </div>
             <div>
-              <label className="text-xs text-gray-400 mb-2 block font-semibold">Input (stdin):</label>
+              <label className="text-xs text-gray-500 mb-1 block">Input (stdin):</label>
               <textarea
                 value={stdin}
                 onChange={(e) => setStdin(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800/50 text-gray-200 border border-gray-700/50 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-transparent transition-all"
+                className="w-full px-2 py-1 bg-black text-green-400 border border-gray-800 rounded font-mono text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
                 rows={2}
                 placeholder="Enter input..."
               />
             </div>
             <div>
-              <label className="text-xs text-gray-400 mb-2 block font-semibold">Code:</label>
+              <label className="text-xs text-gray-500 mb-1 block">Code:</label>
               <textarea
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800/50 text-gray-200 border border-gray-700/50 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-transparent transition-all"
+                className="w-full px-2 py-1 bg-black text-green-400 border border-gray-800 rounded font-mono text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
                 rows={8}
                 placeholder={`Write your ${language} code here...`}
               />

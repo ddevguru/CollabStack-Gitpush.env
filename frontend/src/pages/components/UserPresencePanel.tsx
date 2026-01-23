@@ -58,10 +58,10 @@ export default function UserPresencePanel({ projectId, roomId }: UserPresencePan
         const existing = prev.find((u) => u.userId === data.userId);
         const updated: UserPresence = {
           userId: data.userId,
-          userName: data.userName || 'Unknown',
+          userName: data.userName || existing?.userName || 'Unknown',
           filePath: data.filePath || 'Unknown',
-          line: 0,
-          column: 0,
+          line: existing?.line || 0,
+          column: existing?.column || 0,
           action: 'viewing',
           lastSeen: new Date(),
         };

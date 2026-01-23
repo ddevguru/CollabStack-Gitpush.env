@@ -19,9 +19,55 @@ export class MeetService {
       throw createError('Google account not connected. Please connect in Settings.', 400);
     }
 
-    // In production, you should refresh the token if expired
-    // For now, we'll use the stored token
-    return user.googleToken;
+    // Try to use the token, refresh if expired
+    try {
+      // Test token by making a simple API call
+      const testResponse = await axios.get(
+        'https://www.googleapis.com/oauth2/v2/userinfo',
+        {
+          headers: { Authorization: `Bearer ${user.googleToken}` },
+          validateStatus: () => true, // Don't throw on error
+        }
+      );
+
+      if (testResponse.status === 401 && user.googleRefreshToken) {
+        // Token expired, refresh it
+        if (!this.clientId || !this.clientSecret) {
+          console.warn('Google OAuth credentials not configured, cannot refresh token');
+          throw createError('Google OAuth not configured. Please check environment variables.', 500);
+        }
+
+        try {
+          const refreshResponse = await axios.post(
+            'https://oauth2.googleapis.com/token',
+            {
+              client_id: this.clientId,
+              client_secret: this.clientSecret,
+              refresh_token: user.googleRefreshToken,
+              grant_type: 'refresh_token',
+            }
+          );
+
+          const newToken = refreshResponse.data.access_token;
+          
+          // Update token in database
+          await prisma.user.update({
+            where: { id: userId },
+            data: { googleToken: newToken },
+          });
+
+          return newToken;
+        } catch (refreshError: any) {
+          console.error('Token refresh failed:', refreshError);
+          throw createError('Failed to refresh Google token. Please reconnect your Google account.', 401);
+        }
+      }
+
+      return user.googleToken;
+    } catch (error) {
+      // If refresh fails, return original token and let API call fail with proper error
+      return user.googleToken;
+    }
   }
 
   async createQuickMeet(userId: string, projectId?: string, teamId?: string): Promise<any> {
@@ -66,7 +112,41 @@ export class MeetService {
         }
       );
 
-      const meetUrl = response.data.conferenceData?.entryPoints?.[0]?.uri || response.data.hangoutLink;
+      const eventId = response.data.id;
+
+      // Fetch the event again to get conferenceData (sometimes not in initial response)
+      let meetUrl: string | null = null;
+      try {
+        const eventResponse = await axios.get(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`,
+          {
+            params: {
+              conferenceDataVersion: 1,
+            },
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+
+        // Get Meet URL from fetched event
+        meetUrl = eventResponse.data.conferenceData?.entryPoints?.[0]?.uri || 
+                  eventResponse.data.hangoutLink ||
+                  eventResponse.data.conferenceData?.hangoutLink;
+        
+        if (!meetUrl && eventResponse.data.conferenceData?.entryPoints) {
+          const entryPoints = eventResponse.data.conferenceData.entryPoints;
+          meetUrl = entryPoints.find((ep: any) => ep.entryPointType === 'video')?.uri || entryPoints[0]?.uri;
+        }
+      } catch (fetchError) {
+        console.warn('Failed to fetch event with conferenceData:', fetchError);
+      }
+
+      // If still no URL, create a new Meet link
+      if (!meetUrl || (!meetUrl.includes('meet.google.com') && !meetUrl.startsWith('http'))) {
+        // Generate a simple Meet link - user can create meeting from calendar event
+        meetUrl = `https://meet.google.com/new`;
+      }
 
       // Store meeting in database
       await prisma.sessionEvent.create({
@@ -76,7 +156,7 @@ export class MeetService {
           data: {
             userId,
             meetUrl,
-            eventId: response.data.id,
+            eventId: eventId,
             startTime: now.toISOString(),
             endTime: endTime.toISOString(),
           } as any,
@@ -144,7 +224,30 @@ export class MeetService {
         }
       );
 
-      const meetUrl = response.data.conferenceData?.entryPoints?.[0]?.uri || response.data.hangoutLink;
+      // Get Meet URL from response - try multiple possible locations
+      let meetUrl = response.data.conferenceData?.entryPoints?.[0]?.uri || 
+                    response.data.hangoutLink ||
+                    response.data.conferenceData?.hangoutLink;
+      
+      // If still no URL, try alternative method
+      if (!meetUrl) {
+        // Sometimes Meet link is in a different format
+        const entryPoints = response.data.conferenceData?.entryPoints || [];
+        if (entryPoints.length > 0) {
+          meetUrl = entryPoints.find((ep: any) => ep.entryPointType === 'video')?.uri || entryPoints[0]?.uri;
+        }
+      }
+      
+      // Last resort: generate from event ID
+      if (!meetUrl || (!meetUrl.includes('meet.google.com') && !meetUrl.startsWith('http'))) {
+        console.warn('Meet URL not found in response, attempting to generate:', response.data);
+        // Try to get from conferenceData
+        if (response.data.conferenceData?.conferenceId) {
+          meetUrl = `https://meet.google.com/${response.data.conferenceData.conferenceId}`;
+        } else {
+          throw new Error('Failed to generate Google Meet link. Please check your Google Calendar API permissions.');
+        }
+      }
 
       // Store meeting in database
       await prisma.sessionEvent.create({

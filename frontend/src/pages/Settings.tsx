@@ -16,6 +16,25 @@ export default function Settings() {
 
   useEffect(() => {
     checkConnections();
+    
+    // Check connections again when component becomes visible (e.g., after OAuth callback)
+    const handleFocus = () => {
+      checkConnections();
+    };
+    window.addEventListener('focus', handleFocus);
+    
+    // Also check when navigating back to settings
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        checkConnections();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const checkConnections = async () => {
@@ -23,14 +42,22 @@ export default function Settings() {
       const response = await api.get('/users/me');
       const userData = response.data.data.user;
       setGithubConnected(!!userData.githubUsername);
-      // Google connection status is not directly exposed for security
-      // We'll check based on auth providers
-      const hasGoogle = Array.isArray(userData.authProviders) && userData.authProviders.includes('GOOGLE');
-      setGoogleConnected(hasGoogle);
+      // Check Google connection status
+      setGoogleConnected(!!userData.hasGoogleAccount);
       
-      // Check Drive auto-sync settings
-      // This would be stored in user preferences or project settings
+      // Check Drive auto-sync settings from projects
+      if (userData.hasGoogleAccount) {
+        try {
+          const projectsResponse = await api.get('/projects');
+          const projects = projectsResponse.data?.data?.projects || [];
+          const hasAutoSync = projects.some((p: any) => p.driveSyncMode === 'AUTO');
+          setDriveAutoSync(hasAutoSync);
+        } catch (error) {
+          console.error('Error checking drive sync mode:', error);
+        }
+      }
     } catch (error) {
+      console.error('Error checking connections:', error);
       // Ignore
     }
   };
@@ -67,11 +94,36 @@ export default function Settings() {
 
   const handleToggleDriveAutoSync = async () => {
     try {
-      // This would update user preferences or project settings
+      // Get all user's projects and enable/disable auto-sync
+      const projectsResponse = await api.get('/projects');
+      const projects = projectsResponse.data?.data?.projects || [];
+      
+      const newSyncMode = !driveAutoSync ? 'AUTO' : 'OFF';
+      
+      // Update all projects
+      const updatePromises = projects.map(async (project: any) => {
+        // First ensure Drive folder exists
+        if (newSyncMode === 'AUTO' && !project.driveFolderId) {
+          try {
+            await api.post(`/drive/projects/${project.id}/folder`);
+          } catch (error) {
+            console.error(`Failed to create folder for ${project.name}:`, error);
+          }
+        }
+        
+        // Update sync mode
+        return api.put(`/projects/${project.id}`, {
+          driveSyncMode: newSyncMode,
+        });
+      });
+      
+      await Promise.all(updatePromises);
+      
       setDriveAutoSync(!driveAutoSync);
-      toast.success(driveAutoSync ? 'Auto-sync disabled' : 'Auto-sync enabled');
+      toast.success(driveAutoSync ? 'Auto-sync disabled for all projects' : 'Auto-sync enabled for all projects');
     } catch (error: any) {
-      toast.error('Failed to update auto-sync settings');
+      console.error('Error updating auto-sync:', error);
+      toast.error(error.response?.data?.error?.message || 'Failed to update auto-sync settings');
     }
   };
 

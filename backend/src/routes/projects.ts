@@ -45,5 +45,9 @@ router.delete('/:id/tasks/:taskId', async (req: AuthRequest, res: Response, next
   await projectController.deleteTask(req, res, next);
 });
 
+router.post('/:id/execute', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  await projectController.executeCommand(req, res, next);
+});
+
 export default router;
 

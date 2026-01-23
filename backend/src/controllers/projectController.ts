@@ -3,6 +3,11 @@ import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { AuthRequest } from '../middleware/auth.js';
 import { createError } from '../middleware/errorHandler.js';
+import { spawn } from 'child_process';
+import { writeFileSync, rmSync, mkdirSync, readdirSync, readFileSync, statSync } from 'fs';
+import { promises as fsPromises } from 'fs';
+import { join, dirname, relative } from 'path';
+import { tmpdir } from 'os';
 
 const prisma = new PrismaClient();
 
@@ -647,6 +652,313 @@ export class ProjectController {
       });
     } catch (error) {
       next(error);
+    }
+  }
+
+  async executeCommand(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.userId) {
+        throw createError('Unauthorized', 401);
+      }
+
+      const { id } = req.params;
+      const { command } = req.body;
+
+      if (!command) {
+        throw createError('Command is required', 400);
+      }
+
+      // Check access
+      const project = await prisma.project.findFirst({
+        where: {
+          id,
+          ownerTeam: {
+            OR: [
+              { leaderId: req.userId },
+              { members: { some: { userId: req.userId } } },
+            ],
+          },
+        },
+        include: {
+          files: true,
+        },
+      });
+
+      if (!project) {
+        throw createError('Project not found or access denied', 404);
+      }
+
+      // Create temporary directory for project files
+      const tempDir = await fsPromises.mkdtemp(join(tmpdir(), `project-${id}-`));
+      
+      try {
+        // Write all project files to temp directory
+        for (const file of project.files.filter(f => !f.isDirectory)) {
+          const filePath = join(tempDir, file.path.replace(/^\//, '')); // Remove leading slash
+          const dir = dirname(filePath);
+          if (dir && dir !== tempDir) {
+            mkdirSync(dir, { recursive: true });
+          }
+          writeFileSync(filePath, file.content);
+        }
+
+        // Detect project type and suggest commands if needed
+        const projectType = project.projectType || 'generic';
+        const hasPackageJson = project.files.some(f => f.path.includes('package.json'));
+        const hasRequirementsTxt = project.files.some(f => f.path.includes('requirements.txt'));
+        const hasPipfile = project.files.some(f => f.path.includes('Pipfile'));
+        const hasPomXml = project.files.some(f => f.path.includes('pom.xml'));
+        const hasCargoToml = project.files.some(f => f.path.includes('Cargo.toml'));
+
+        // Parse command
+        const parts = command.trim().split(/\s+/);
+        let cmd = parts[0];
+        let args = parts.slice(1);
+
+        // Auto-detect and prepend package manager if needed
+        if (cmd === 'install' && hasPackageJson) {
+          cmd = 'npm';
+          args = ['install', ...args];
+        } else if (cmd === 'start' && hasPackageJson) {
+          cmd = 'npm';
+          args = ['start', ...args];
+        } else if (cmd === 'run' && hasPackageJson) {
+          cmd = 'npm';
+          args = ['run', ...args];
+        } else if (cmd === 'dev' && hasPackageJson) {
+          cmd = 'npm';
+          args = ['run', 'dev', ...args];
+        } else if (cmd === 'install' && (hasRequirementsTxt || hasPipfile)) {
+          cmd = 'pip';
+          args = ['install', '-r', hasRequirementsTxt ? 'requirements.txt' : '', ...args].filter(Boolean);
+        } else if (cmd === 'run' && hasPomXml) {
+          cmd = 'mvn';
+          args = ['exec:java', ...args];
+        } else if (cmd === 'run' && hasCargoToml) {
+          cmd = 'cargo';
+          args = ['run', ...args];
+        }
+
+        // Execute command
+        const output: string[] = [];
+        const errors: string[] = [];
+
+        return new Promise<void>((resolve, reject) => {
+          // Use shell: true for Windows compatibility and better command handling
+          const fullCommand = `${cmd} ${args.join(' ')}`;
+          
+          let child: any;
+          let timeout: NodeJS.Timeout;
+          let isResolved = false;
+
+          const cleanup = () => {
+            // Delay cleanup to allow sync to complete
+            setTimeout(() => {
+              try {
+                rmSync(tempDir, { recursive: true, force: true });
+              } catch (cleanupError) {
+                console.error('Failed to cleanup temp directory:', cleanupError);
+              }
+            }, 5000); // Wait 5 seconds before cleanup
+          };
+
+          const safeResolve = (data: any) => {
+            if (!isResolved) {
+              isResolved = true;
+              if (timeout) clearTimeout(timeout);
+              cleanup();
+              res.json(data);
+              resolve();
+            }
+          };
+
+          const safeReject = (error: any) => {
+            if (!isResolved) {
+              isResolved = true;
+              if (timeout) clearTimeout(timeout);
+              cleanup();
+              reject(error);
+            }
+          };
+
+          try {
+            // When shell: true, first arg should be command string, second is options
+            child = spawn(fullCommand, [], {
+              shell: true,
+              cwd: tempDir,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              env: {
+                ...process.env,
+                PATH: process.env.PATH,
+              },
+            });
+          } catch (spawnError: any) {
+            safeReject(createError(`Failed to spawn command: ${spawnError.message}`, 500));
+            return;
+          }
+
+          if (child.stdout) {
+            child.stdout.on('data', (data: Buffer) => {
+              output.push(data.toString());
+            });
+          }
+
+          if (child.stderr) {
+            child.stderr.on('data', (data: Buffer) => {
+              errors.push(data.toString());
+            });
+          }
+
+          child.on('close', (code: number | null) => {
+            const outputText = output.join('');
+            const errorText = errors.join('');
+
+            // If command succeeded and it's a package install command, sync files back in background
+            if ((code === 0 || code === null) && (cmd === 'npm' || cmd === 'yarn' || cmd === 'pnpm' || cmd === 'pip')) {
+              // Run sync in background - don't block response
+              setImmediate(async () => {
+                try {
+                  // Copy tempDir path before cleanup
+                  const syncDir = tempDir;
+                  await this.syncFilesToDatabase(syncDir, id, req.userId!);
+                  console.log(`✅ Files synced for project ${id}`);
+                } catch (syncError) {
+                  console.error('Failed to sync files after install:', syncError);
+                  // Don't fail the command if sync fails
+                }
+              });
+            }
+
+            safeResolve({
+              success: code === 0 || code === null,
+              data: {
+                output: outputText,
+                error: errorText,
+                exitCode: code,
+                command: fullCommand,
+              },
+            });
+          });
+
+          child.on('error', (error: Error) => {
+            // Provide helpful error messages
+            if ((error as any).code === 'ENOENT') {
+              safeReject(createError(`Command not found: ${cmd}. Make sure ${cmd} is installed and in your PATH.`, 400));
+            } else {
+              safeReject(createError(`Failed to execute command: ${error.message}`, 500));
+            }
+          });
+
+          // Timeout after 10 minutes for long-running commands
+          timeout = setTimeout(() => {
+            try {
+              if (child && !child.killed) {
+                child.kill();
+              }
+            } catch {}
+            safeReject(createError('Command execution timeout (10 minutes)', 408));
+          }, 10 * 60 * 1000);
+        });
+      } catch (error: any) {
+        // Cleanup on error
+        try {
+          rmSync(tempDir, { recursive: true, force: true });
+        } catch {}
+        throw error;
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Helper function to sync files from temp directory to database
+  async syncFilesToDatabase(tempDir: string, projectId: string, userId: string) {
+    try {
+      // Only sync specific important files - don't sync everything
+      const importantFiles = ['package-lock.json', 'yarn.lock', 'package.json', 'requirements.txt', 'Pipfile', 'Pipfile.lock'];
+      
+      const syncFile = async (filePath: string, relativePath: string) => {
+        try {
+          const stats = statSync(filePath);
+          
+          if (stats.isDirectory()) {
+            return; // Skip directories for now
+          }
+
+          // Skip very large files (over 500KB) to avoid database issues
+          if (stats.size > 500 * 1024) {
+            console.log(`Skipping large file: ${relativePath} (${stats.size} bytes)`);
+            return;
+          }
+
+          // Only sync important files
+          const fileName = relativePath.split('/').pop() || relativePath;
+          if (!importantFiles.includes(fileName) && !relativePath.endsWith('.json')) {
+            return; // Skip non-important files
+          }
+
+          // Read file content
+          let content: string;
+          try {
+            content = readFileSync(filePath, 'utf-8');
+          } catch (readError) {
+            console.error(`Failed to read file ${relativePath}:`, readError);
+            return;
+          }
+          
+          // Check if file exists
+          const existingFile = await prisma.file.findUnique({
+            where: {
+              projectId_path: {
+                projectId,
+                path: relativePath,
+              },
+            },
+          });
+
+          if (existingFile) {
+            // Update existing file
+            await prisma.file.update({
+              where: { id: existingFile.id },
+              data: { content },
+            });
+            console.log(`✅ Updated file: ${relativePath}`);
+          } else {
+            // Create new file
+            await prisma.file.create({
+              data: {
+                projectId,
+                path: relativePath,
+                content,
+                isDirectory: false,
+              },
+            });
+            console.log(`✅ Created file: ${relativePath}`);
+          }
+        } catch (error) {
+          console.error(`Failed to sync file ${relativePath}:`, error);
+        }
+      };
+
+      // Sync only important files from temp directory
+      const entries = readdirSync(tempDir);
+      for (const entry of entries) {
+        // Skip node_modules completely
+        if (entry === 'node_modules' || entry.startsWith('.')) continue;
+        
+        const entryPath = join(tempDir, entry);
+        const stats = statSync(entryPath);
+        
+        if (stats.isFile()) {
+          // Sync important files only
+          if (importantFiles.includes(entry) || entry.endsWith('.json')) {
+            await syncFile(entryPath, entry);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to sync files:', error);
+      // Don't throw - this is a background operation
     }
   }
 }

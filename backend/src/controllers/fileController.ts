@@ -248,28 +248,67 @@ export class FileController {
         });
 
         // Trigger auto-sync to Drive in background (don't wait for it)
-        if (user?.googleToken) {
+        if (user?.googleToken && project.driveFolderId) {
           setImmediate(async () => {
             try {
               const { DriveService } = await import('../services/driveService.js');
               const driveService = new DriveService();
               
-              await driveService.syncProject(
-                user.googleToken!,
-                project.driveFolderId!,
-                projectFiles.map((f: { path: string; content: string; isDirectory: boolean }) => ({ 
-                  path: f.path, 
-                  content: f.content, 
-                  isDirectory: f.isDirectory 
-                })),
-                project.name
-              );
-              console.log(`✅ Auto-synced to Drive: ${project.name}`);
+              // Refresh token if needed
+              let token = user.googleToken!;
+              try {
+                await driveService.syncProject(
+                  token,
+                  project.driveFolderId!,
+                  projectFiles.map((f: { path: string; content: string; isDirectory: boolean }) => ({ 
+                    path: f.path, 
+                    content: f.content, 
+                    isDirectory: f.isDirectory 
+                  })),
+                  project.name
+                );
+                console.log(`✅ Auto-synced to Drive: ${project.name}`);
+              } catch (syncError: any) {
+                // If token expired, try to refresh
+                if (syncError.response?.status === 401) {
+                  const userWithRefresh = await prisma.user.findUnique({
+                    where: { id: req.userId },
+                    select: { googleRefreshToken: true },
+                  });
+                  
+                  if (userWithRefresh?.googleRefreshToken) {
+                    token = await driveService.refreshToken(userWithRefresh.googleRefreshToken);
+                    await prisma.user.update({
+                      where: { id: req.userId },
+                      data: { googleToken: token },
+                    });
+                    
+                    // Retry sync
+                    await driveService.syncProject(
+                      token,
+                      project.driveFolderId!,
+                      projectFiles.map((f: { path: string; content: string; isDirectory: boolean }) => ({ 
+                        path: f.path, 
+                        content: f.content, 
+                        isDirectory: f.isDirectory 
+                      })),
+                      project.name
+                    );
+                    console.log(`✅ Auto-synced to Drive (after refresh): ${project.name}`);
+                  } else {
+                    throw syncError;
+                  }
+                } else {
+                  throw syncError;
+                }
+              }
             } catch (error) {
               // Silently fail - don't block file save
               console.error('Auto-sync to Drive failed:', error);
             }
           });
+        } else if (project.driveSyncMode === 'AUTO' && !project.driveFolderId) {
+          console.warn(`⚠️ Auto-sync enabled but no Drive folder for project: ${project.name}`);
         }
       }
 

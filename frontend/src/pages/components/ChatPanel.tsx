@@ -106,8 +106,21 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
       setMessages([]);
     };
 
-    const handleVoiceNote = (data: Message) => {
-      setMessages((prev) => [...prev, data]);
+    const handleVoiceNote = (data: { userId: string; userName: string; avatar?: string; audioData: string; duration: number; timestamp: string }) => {
+      // Don't add own voice notes (they're already added when sent)
+      if (data.userId === user?.id) return;
+      
+      const newMessage: Message = {
+        userId: data.userId,
+        userName: data.userName,
+        avatar: data.avatar,
+        message: 'Voice note',
+        timestamp: data.timestamp,
+        type: 'voice_note',
+        audioData: data.audioData,
+        duration: data.duration,
+      };
+      setMessages((prev) => [...prev, newMessage]);
     };
 
     const handleCallOffer = async (data: { fromUserId: string; fromUserName: string; offer: RTCSessionDescriptionInit }) => {
@@ -178,7 +191,12 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
         peerConnectionsRef.current.set(data.fromUserId, pc);
         setIsInCall(true);
         setShowVoiceCall(true);
-        setActiveUsers((prev) => [...prev.filter((id) => id !== data.fromUserId), data.fromUserId]);
+        setActiveUsers((prev) => {
+          if (!prev.includes(data.fromUserId)) {
+            return [...prev, data.fromUserId];
+          }
+          return prev;
+        });
       } catch (error) {
         console.error('Error handling call offer:', error);
         toast.error('Failed to accept call');
@@ -224,6 +242,9 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
       setActiveUsers(data.users.map((u) => u.userId));
     };
 
+    // Join room to get active users list
+    socket.emit('room:join', { projectId, roomId });
+
     socket.on('chat:message', handleMessage);
     socket.on('chat:clear', handleClear);
     socket.on('voice:note:received', handleVoiceNote);
@@ -234,6 +255,9 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
     socket.on('room:users', handleRoomUsers);
 
     return () => {
+      // Leave room on unmount
+      socket.emit('room:leave', { roomId });
+      
       socket.off('chat:message', handleMessage);
       socket.off('chat:clear', handleClear);
       socket.off('voice:note:received', handleVoiceNote);
@@ -243,7 +267,7 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
       socket.off('voice:call:end', handleCallEnd);
       socket.off('room:users', handleRoomUsers);
     };
-  }, [socket, roomId, user]);
+  }, [socket, roomId, projectId, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -396,6 +420,20 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
                 audioData: base64Audio,
                 duration: Math.round(duration),
               });
+              
+              // Add own voice note to messages immediately
+              const ownMessage: Message = {
+                userId: user?.id || '',
+                userName: user?.name || 'You',
+                avatar: user?.avatar,
+                message: 'Voice note',
+                timestamp: new Date().toISOString(),
+                type: 'voice_note',
+                audioData: base64Audio,
+                duration: Math.round(duration),
+              };
+              setMessages((prev) => [...prev, ownMessage]);
+              
               toast.success('Voice note sent');
             }
           };
@@ -441,16 +479,31 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
       localStreamRef.current = stream;
 
       // Create peer connections for all active users
-      const sessions = await api.get(`/chat/projects/${projectId}/users`).catch(() => ({ data: { users: [] } }));
-      const users = sessions.data?.users || activeUsers;
+      try {
+        const sessionsResponse = await api.get(`/chat/projects/${projectId}/users`);
+        const usersList = sessionsResponse.data?.data?.users || [];
+        
+        // Use socket room users if API fails
+        const availableUsers = usersList.length > 0 ? usersList : activeUsers.map(id => ({ userId: id }));
+        
+        if (availableUsers.length === 0) {
+          toast.error('No users available to call');
+          return;
+        }
 
-      if (users.length === 0) {
-        toast.error('No users available to call');
-        return;
-      }
+        // Filter out current user and create connections
+        const otherUsers = availableUsers.filter((u: any) => {
+          const userId = typeof u === 'string' ? u : u.userId;
+          return userId !== user?.id;
+        });
 
-      users.forEach(async (targetUserId: string) => {
-        if (targetUserId === user?.id) return;
+        if (otherUsers.length === 0) {
+          toast.error('No other users available to call');
+          return;
+        }
+
+        otherUsers.forEach(async (userObj: any) => {
+          const targetUserId = typeof userObj === 'string' ? userObj : userObj.userId;
 
         const pc = new RTCPeerConnection({
           iceServers: [
@@ -507,10 +560,96 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
         };
 
         peerConnectionsRef.current.set(targetUserId, pc);
-      });
+        setIsInCall(true);
+        setShowVoiceCall(true);
+        setActiveUsers((prev) => {
+          if (!prev.includes(targetUserId)) {
+            return [...prev, targetUserId];
+          }
+          return prev;
+        });
+        });
+      } catch (error) {
+        console.error('Error getting active users:', error);
+        // Fallback to activeUsers from socket
+        if (activeUsers.length === 0) {
+          toast.error('No users available to call');
+          return;
+        }
+        
+        const otherUsers = activeUsers.filter(id => id !== user?.id);
+        if (otherUsers.length === 0) {
+          toast.error('No other users available to call');
+          return;
+        }
+        
+        otherUsers.forEach(async (targetUserId: string) => {
+          const pc = new RTCPeerConnection({
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+            ],
+          });
 
-      setIsInCall(true);
-      setShowVoiceCall(true);
+          stream.getTracks().forEach((track) => {
+            pc.addTrack(track, stream);
+          });
+
+          // Create offer
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          // Send offer
+          if (socket) {
+            socket.emit('voice:call:offer', {
+              roomId,
+              offer,
+              targetUserId,
+            });
+          }
+
+          // Handle ICE candidates
+          pc.onicecandidate = (event) => {
+            if (event.candidate && socket) {
+              socket.emit('voice:call:ice-candidate', {
+                roomId,
+                candidate: event.candidate,
+                targetUserId,
+              });
+            }
+          };
+
+          // Handle remote stream
+          pc.ontrack = (event) => {
+            if (remoteAudioRef.current) {
+              remoteAudioRef.current.srcObject = event.streams[0];
+              remoteAudioRef.current.play().catch(console.error);
+            }
+          };
+
+          pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+              pc.close();
+              peerConnectionsRef.current.delete(targetUserId);
+              setActiveUsers((prev) => prev.filter((id) => id !== targetUserId));
+              if (peerConnectionsRef.current.size === 0) {
+                setIsInCall(false);
+                setShowVoiceCall(false);
+              }
+            }
+          };
+
+          peerConnectionsRef.current.set(targetUserId, pc);
+          setIsInCall(true);
+          setShowVoiceCall(true);
+          setActiveUsers((prev) => {
+            if (!prev.includes(targetUserId)) {
+              return [...prev, targetUserId];
+            }
+            return prev;
+          });
+        });
+      }
       toast.success('Call started');
     } catch (error) {
       console.error('Error starting voice call:', error);

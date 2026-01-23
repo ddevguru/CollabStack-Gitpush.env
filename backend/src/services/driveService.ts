@@ -107,29 +107,98 @@ export class DriveService {
     files: any[],
     projectName: string
   ): Promise<any> {
-    // List existing files in folder
-    const listResponse = await axios.get(
-      `https://www.googleapis.com/drive/v3/files`,
-      {
-        params: {
-          q: `'${folderId}' in parents and trashed=false`,
-          fields: 'files(id, name)',
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const existingFiles = listResponse.data.files || [];
-    const existingFileMap = new Map(existingFiles.map((f: any) => [f.name, f.id]));
-
     const syncedFiles: any[] = [];
+    const folderCache = new Map<string, string>(); // Cache folder IDs by path
+    folderCache.set('', folderId); // Root folder
 
-    // Upload/update each file
-    for (const file of files.filter(f => !f.isDirectory)) {
+    // Helper function to get or create folder
+    const getOrCreateFolder = async (folderPath: string, parentId: string): Promise<string> => {
+      if (folderCache.has(folderPath)) {
+        return folderCache.get(folderPath)!;
+      }
+
+      const folderName = folderPath.split('/').pop() || folderPath;
+      
+      // Check if folder exists
+      const listResponse = await axios.get(
+        `https://www.googleapis.com/drive/v3/files`,
+        {
+          params: {
+            q: `'${parentId}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+            fields: 'files(id, name)',
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      let folderId: string;
+      if (listResponse.data.files && listResponse.data.files.length > 0) {
+        folderId = listResponse.data.files[0].id;
+      } else {
+        // Create folder
+        const createResponse = await axios.post(
+          'https://www.googleapis.com/drive/v3/files',
+          {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [parentId],
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        folderId = createResponse.data.id;
+        syncedFiles.push({ name: folderName, action: 'created', type: 'folder' });
+      }
+
+      folderCache.set(folderPath, folderId);
+      return folderId;
+    };
+
+    // Helper function to upload file
+    const uploadFile = async (file: any, parentFolderId: string) => {
       const fileName = file.path.split('/').pop() || file.path;
-      const existingFileId = existingFileMap.get(fileName);
+      
+      // Check if file exists
+      const listResponse = await axios.get(
+        `https://www.googleapis.com/drive/v3/files`,
+        {
+          params: {
+            q: `'${parentFolderId}' in parents and name='${fileName}' and trashed=false`,
+            fields: 'files(id, name)',
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const existingFiles = listResponse.data.files || [];
+      const existingFileId = existingFiles.length > 0 ? existingFiles[0].id : null;
+
+      // Determine MIME type based on file extension
+      const ext = fileName.split('.').pop()?.toLowerCase() || '';
+      const mimeTypes: Record<string, string> = {
+        'js': 'application/javascript',
+        'ts': 'application/typescript',
+        'jsx': 'application/javascript',
+        'tsx': 'application/typescript',
+        'json': 'application/json',
+        'html': 'text/html',
+        'css': 'text/css',
+        'py': 'text/x-python',
+        'java': 'text/x-java-source',
+        'cpp': 'text/x-c++',
+        'c': 'text/x-c',
+        'md': 'text/markdown',
+        'txt': 'text/plain',
+      };
+      const mimeType = mimeTypes[ext] || 'text/plain';
 
       if (existingFileId) {
         // Update existing file
@@ -140,16 +209,16 @@ export class DriveService {
             params: { uploadType: 'media' },
             headers: {
               Authorization: `Bearer ${token}`,
-              'Content-Type': 'text/plain',
+              'Content-Type': mimeType,
             },
           }
         );
-        syncedFiles.push({ name: fileName, action: 'updated' });
+        syncedFiles.push({ name: fileName, action: 'updated', path: file.path });
       } else {
-        // Create new file - use simple upload
+        // Create new file
         const metadata = {
           name: fileName,
-          parents: [folderId],
+          parents: [parentFolderId],
         };
 
         const boundary = '----WebKitFormBoundary' + Date.now();
@@ -158,7 +227,7 @@ export class DriveService {
           Buffer.from('Content-Type: application/json\r\n\r\n'),
           Buffer.from(JSON.stringify(metadata)),
           Buffer.from(`\r\n--${boundary}\r\n`),
-          Buffer.from('Content-Type: text/plain\r\n\r\n'),
+          Buffer.from(`Content-Type: ${mimeType}\r\n\r\n`),
           Buffer.from(file.content),
           Buffer.from(`\r\n--${boundary}--\r\n`),
         ]);
@@ -174,8 +243,50 @@ export class DriveService {
             },
           }
         );
-        syncedFiles.push({ name: fileName, action: 'created' });
+        syncedFiles.push({ name: fileName, action: 'created', path: file.path });
       }
+    };
+
+    // Process directories first, then files
+    const directories = files.filter(f => f.isDirectory).sort((a, b) => a.path.localeCompare(b.path));
+    const fileList = files.filter(f => !f.isDirectory);
+
+    // Create all directories first
+    for (const dir of directories) {
+      const pathParts = dir.path.split('/').filter(p => p);
+      let currentPath = '';
+      let currentParentId = folderId;
+
+      for (let i = 0; i < pathParts.length; i++) {
+        currentPath = currentPath ? `${currentPath}/${pathParts[i]}` : pathParts[i];
+        currentParentId = await getOrCreateFolder(currentPath, currentParentId);
+      }
+    }
+
+    // Upload all files to their respective folders
+    for (const file of fileList) {
+      const pathParts = file.path.split('/').filter(p => p);
+      const fileName = pathParts.pop() || file.path;
+      const folderPath = pathParts.join('/');
+
+      let parentFolderId = folderId;
+      if (folderPath) {
+        // Get folder ID from cache
+        if (folderCache.has(folderPath)) {
+          parentFolderId = folderCache.get(folderPath)!;
+        } else {
+          // Create folder path if it doesn't exist
+          let currentPath = '';
+          let currentParentId = folderId;
+          for (const part of pathParts) {
+            currentPath = currentPath ? `${currentPath}/${part}` : part;
+            currentParentId = await getOrCreateFolder(currentPath, currentParentId);
+          }
+          parentFolderId = currentParentId;
+        }
+      }
+
+      await uploadFile(file, parentFolderId);
     }
 
     return {
