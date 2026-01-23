@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Github, Mail, Lock, User, ArrowRight, Code2 } from 'lucide-react';
+import { Github, Mail, Lock, User, ArrowRight, Code2, Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 import { ParticleBackground } from '../components/nexus/ParticleBackground';
@@ -11,22 +11,72 @@ export default function Register() {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const { register, isLoading } = useAuthStore();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpTimer, setOtpTimer] = useState(0);
+  const { register, verifyOTP, resendOTP, isLoading } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
+    
+    if (!otpSent) {
+      // First step: Send OTP
+      if (password !== confirmPassword) {
+        toast.error('Passwords do not match');
+        return;
+      }
+      try {
+        const result = await register(email, name, password);
+        setOtpSent(true);
+        setOtpTimer(600); // 10 minutes
+        toast.success('OTP sent to your email. Please verify to complete registration.');
+        
+        // Start countdown timer
+        const interval = setInterval(() => {
+          setOtpTimer((prev) => {
+            if (prev <= 1) {
+              clearInterval(interval);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } catch (error: any) {
+        toast.error(error.response?.data?.error?.message || 'Failed to send OTP');
+      }
+    } else {
+      // Second step: Verify OTP
+      if (!otp || otp.length !== 6) {
+        toast.error('Please enter a valid 6-digit OTP');
+        return;
+      }
+      try {
+        await verifyOTP(email, otp);
+        toast.success('Account created successfully!');
+        navigate('/dashboard');
+      } catch (error: any) {
+        toast.error(error.response?.data?.error?.message || 'Invalid OTP');
+      }
     }
+  };
+
+  const handleResendOTP = async () => {
     try {
-      await register(email, name, password);
-      toast.success('Account created successfully');
-      navigate('/dashboard');
+      await resendOTP(email);
+      setOtpTimer(600);
+      toast.success('OTP resent to your email');
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Registration failed');
+      toast.error(error.response?.data?.error?.message || 'Failed to resend OTP');
     }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const handleGitHubLogin = () => {
@@ -147,39 +197,93 @@ export default function Register() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-white mb-2" style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)' }}>
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full pl-10 pr-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-collab-500 focus:ring-2 focus:ring-collab-500/50 transition-all"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
+            {!otpSent ? (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-white mb-2" style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)' }}>
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="w-full pl-10 pr-12 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-collab-500 focus:ring-2 focus:ring-collab-500/50 transition-all"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-white mb-2" style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)' }}>
-                Confirm Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className="w-full pl-10 pr-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-collab-500 focus:ring-2 focus:ring-collab-500/50 transition-all"
-                  placeholder="••••••••"
-                />
+                <div>
+                  <label className="block text-sm font-semibold text-white mb-2" style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)' }}>
+                    Confirm Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      className="w-full pl-10 pr-12 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-collab-500 focus:ring-2 focus:ring-collab-500/50 transition-all"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="block text-sm font-semibold text-white mb-2" style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)' }}>
+                  Enter OTP
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    required
+                    maxLength={6}
+                    className="w-full pl-10 pr-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-collab-500 focus:ring-2 focus:ring-collab-500/50 transition-all text-center text-2xl tracking-widest"
+                    placeholder="000000"
+                  />
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-sm text-white/70">
+                    OTP sent to <span className="font-semibold">{email}</span>
+                  </p>
+                  {otpTimer > 0 ? (
+                    <p className="text-sm text-white/70">
+                      Expires in: <span className="font-semibold text-collab-400">{formatTime(otpTimer)}</span>
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResendOTP}
+                      className="text-sm text-collab-400 hover:text-collab-300 font-medium transition-colors"
+                    >
+                      Resend OTP
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             <motion.button
               type="submit"
@@ -190,10 +294,10 @@ export default function Register() {
               style={{ textShadow: '0 1px 3px rgba(0, 0, 0, 0.3)' }}
             >
               {isLoading ? (
-                'Creating account...'
+                otpSent ? 'Verifying...' : 'Sending OTP...'
               ) : (
                 <>
-                  Sign Up
+                  {otpSent ? 'Verify OTP' : 'Sign Up'}
                   <ArrowRight className="w-5 h-5" />
                 </>
               )}

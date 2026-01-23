@@ -11,26 +11,34 @@ interface PlatformExecutionProps {
 }
 
 export default function PlatformExecution({ projectId, projectType, code, language }: PlatformExecutionProps) {
-  const [platforms, setPlatforms] = useState<string[]>([]);
-  const [selectedPlatform, setSelectedPlatform] = useState<string>('');
+  const [platforms, setPlatforms] = useState<string[]>(['web']); // Default to web
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('web');
   const [isExecuting, setIsExecuting] = useState(false);
   const [output, setOutput] = useState<string>('');
 
   useEffect(() => {
     if (projectType) {
       loadPlatforms();
+    } else {
+      // Default platforms for unknown project types
+      setPlatforms(['web']);
+      setSelectedPlatform('web');
     }
   }, [projectType]);
 
   const loadPlatforms = async () => {
     try {
       const response = await api.get(`/platform/platforms/${projectType || 'generic'}`);
-      setPlatforms(response.data.data.platforms);
-      if (response.data.data.platforms.length > 0) {
-        setSelectedPlatform(response.data.data.platforms[0]);
+      const loadedPlatforms = response.data.data.platforms || ['web'];
+      setPlatforms(loadedPlatforms);
+      if (loadedPlatforms.length > 0) {
+        setSelectedPlatform(loadedPlatforms[0]);
       }
     } catch (error) {
-      console.error('Failed to load platforms');
+      console.error('Failed to load platforms, using default:', error);
+      // Fallback to web platform
+      setPlatforms(['web']);
+      setSelectedPlatform('web');
     }
   };
 
@@ -56,7 +64,7 @@ export default function PlatformExecution({ projectId, projectType, code, langua
       // Poll for results
       const pollInterval = setInterval(async () => {
         try {
-          const runResponse = await api.get(`/runs/${runId}`);
+          const runResponse = await api.get(`/runs/${projectId}/${runId}`);
           const run = runResponse.data.data.run;
           
           if (run.status === 'SUCCESS' || run.status === 'ERROR') {
@@ -106,43 +114,81 @@ export default function PlatformExecution({ projectId, projectType, code, langua
     }
   };
 
-  if (platforms.length === 0) {
+  // Always show if projectType exists (defaults to web if platforms not loaded)
+  if (!projectType) {
     return null;
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-4">
+    <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 mb-4 shadow-lg">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Platform Execution</h3>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-collab-500 to-pink-500 flex items-center justify-center">
+            <Play className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Platform Execution</h3>
+            <p className="text-xs text-gray-400">Run your code on different platforms</p>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <select
-            value={selectedPlatform}
+            value={selectedPlatform || 'web'}
             onChange={(e) => setSelectedPlatform(e.target.value)}
-            className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+            className="px-4 py-2 border border-gray-700/50 rounded-lg bg-gray-800/60 text-white text-sm focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-transparent backdrop-blur-sm"
             disabled={isExecuting}
           >
-            {platforms.map((platform) => (
-              <option key={platform} value={platform}>
-                {platform.charAt(0).toUpperCase() + platform.slice(1)}
-              </option>
-            ))}
+            {platforms.length > 0 ? (
+              platforms.map((platform) => (
+                <option key={platform} value={platform}>
+                  {platform.charAt(0).toUpperCase() + platform.slice(1)}
+                </option>
+              ))
+            ) : (
+              <option value="web">Web</option>
+            )}
           </select>
           <button
             onClick={handleExecute}
-            disabled={isExecuting || !code}
-            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            disabled={isExecuting || !code || !selectedPlatform}
+            className="px-6 py-2 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium transition-all"
           >
-            {getPlatformIcon(selectedPlatform)}
-            {isExecuting ? 'Running...' : 'Run'}
+            {isExecuting ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Running...
+              </>
+            ) : (
+              <>
+                {getPlatformIcon(selectedPlatform || 'web')}
+                Run
+              </>
+            )}
           </button>
         </div>
       </div>
 
       {output && (
-        <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-          <div className="text-sm font-mono text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+        <div className="mt-4 p-4 bg-gray-900/60 rounded-lg border border-gray-700/50 backdrop-blur-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-400 uppercase">Output</span>
+            <button
+              onClick={() => setOutput('')}
+              className="text-xs text-gray-500 hover:text-white transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="text-sm font-mono text-gray-200 whitespace-pre-wrap max-h-64 overflow-y-auto">
             {output}
           </div>
+        </div>
+      )}
+      
+      {isExecuting && !output && (
+        <div className="mt-4 p-4 bg-gray-900/40 rounded-lg border border-gray-700/30 flex items-center gap-3">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-collab-400"></div>
+          <span className="text-sm text-gray-400">Executing code...</span>
         </div>
       )}
     </div>

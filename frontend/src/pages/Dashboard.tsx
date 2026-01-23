@@ -363,22 +363,24 @@ export default function Dashboard() {
           <h2 className="text-3xl font-black bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">
             {selectedTab === 'teams' ? 'My Teams' : selectedTab === 'designs' ? 'My Designs' : 'My Projects'}
           </h2>
-          <div className="space-x-2">
+          <div className="flex items-center gap-3">
             {showTeams ? (
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setShowCreateTeam(true)}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center gap-2"
+                className="px-6 py-3 bg-gradient-to-br from-gray-700/80 to-gray-800/80 backdrop-blur-sm border border-gray-600/50 text-white rounded-xl hover:border-collab-500/50 hover:shadow-lg hover:shadow-collab-500/20 transition-all flex items-center gap-2 font-semibold group"
               >
-                <Plus className="w-4 h-4" />
+                <Users className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 Create Team
-              </button>
+              </motion.button>
             ) : selectedTab === 'designs' ? (
               <>
                 {projects.length > 0 && (
                   <select
                     value={selectedProjectId || ''}
                     onChange={(e) => setSelectedProjectId(e.target.value || undefined)}
-                    className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-collab-500"
+                    className="px-4 py-2.5 bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-collab-500/50 transition-all"
                   >
                     <option value="">Select Project</option>
                     {projects.map((project) => (
@@ -389,33 +391,42 @@ export default function Dashboard() {
                   </select>
                 )}
                 {selectedProjectId && (
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={() => {
                       setSelectedDesignId('new');
                       setSelectedProjectId(selectedProjectId);
                     }}
-                    className="px-6 py-3 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-xl hover:shadow-lg hover:shadow-collab-500/50 transition-all flex items-center gap-2 font-semibold"
+                    className="px-6 py-3 bg-gradient-to-r from-collab-500 via-purple-500 to-pink-500 text-white rounded-xl hover:shadow-xl hover:shadow-pink-500/30 transition-all flex items-center gap-2 font-bold text-sm group relative overflow-hidden"
                   >
-                    <Plus className="w-5 h-5" />
-                    New Design
-                  </button>
+                    <span className="absolute inset-0 bg-gradient-to-r from-collab-400 to-pink-400 opacity-0 group-hover:opacity-100 transition-opacity"></span>
+                    <Plus className="w-5 h-5 relative z-10 group-hover:rotate-90 transition-transform" />
+                    <span className="relative z-10">New Design</span>
+                  </motion.button>
                 )}
               </>
             ) : (
               <>
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={() => setShowCreateTeam(true)}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                  className="px-6 py-3 bg-gradient-to-br from-gray-700/80 to-gray-800/80 backdrop-blur-sm border border-gray-600/50 text-white rounded-xl hover:border-collab-500/50 hover:shadow-lg hover:shadow-collab-500/20 transition-all flex items-center gap-2 font-semibold group"
                 >
+                  <Users className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   Create Team
-                </button>
-                <button
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={() => setShowCreateProject(true)}
-                  className="px-6 py-3 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-xl hover:shadow-lg hover:shadow-collab-500/50 transition-all flex items-center gap-2 font-semibold"
+                  className="px-7 py-3.5 bg-gradient-to-r from-collab-500 via-purple-500 to-pink-500 text-white rounded-xl hover:shadow-xl hover:shadow-pink-500/30 transition-all flex items-center gap-2.5 font-bold text-base group relative overflow-hidden"
                 >
-                  <Plus className="w-5 h-5" />
-                  New Project
-                </button>
+                  <span className="absolute inset-0 bg-gradient-to-r from-collab-400 to-pink-400 opacity-0 group-hover:opacity-100 transition-opacity"></span>
+                  <Plus className="w-5 h-5 relative z-10 group-hover:rotate-90 transition-transform" />
+                  <span className="relative z-10">New Project</span>
+                </motion.button>
               </>
             )}
           </div>

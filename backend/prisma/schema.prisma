@@ -482,15 +482,18 @@ model ShareLink {
 }
 
 model Otp {
-  id        String   @id @default(cuid())
-  email     String
-  code      String
-  type      OtpType
-  expiresAt DateTime
-  isUsed    Boolean  @default(false)
-  userId    String?
-  createdAt DateTime @default(now())
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  email        String
+  code         String
+  type         OtpType
+  expiresAt    DateTime
+  isUsed       Boolean  @default(false)
+  userId       String?
+  // Temporary registration data (only for EMAIL_VERIFICATION type)
+  tempName     String?
+  tempPasswordHash String?
+  createdAt    DateTime @default(now())
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([email])
   @@index([code])

@@ -93,10 +93,15 @@ export const LiveCursors = ({ editorRef }: LiveCursorsProps) => {
                 style={{ backgroundColor: color }}
               />
               <div
-                className="absolute -top-8 left-0 px-2 py-1 rounded text-xs text-white whitespace-nowrap shadow-lg"
+                className="absolute -top-10 left-0 px-2 py-1 rounded text-xs text-white whitespace-nowrap shadow-lg max-w-[200px]"
                 style={{ backgroundColor: color }}
               >
-                <div className="font-semibold">{cursor.userName}</div>
+                <div className="font-semibold truncate">{cursor.userName}</div>
+                {cursor.filePath && (
+                  <div className="text-[10px] opacity-90 truncate" title={cursor.filePath}>
+                    📄 {cursor.filePath.split('/').pop() || cursor.filePath}
+                  </div>
+                )}
                 {cursor.position && (
                   <div className="text-[10px] opacity-90">
                     Line {cursor.position.line}, Col {cursor.position.column}

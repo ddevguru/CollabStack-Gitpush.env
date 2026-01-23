@@ -149,7 +149,12 @@ export const Calendar = ({ projectId, teamId }: CalendarProps) => {
       setReminderText('');
       loadEvents();
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to add reminder');
+      const errorMessage = error.response?.data?.error?.message || error.message || 'Failed to add reminder';
+      if (errorMessage.includes('Google account not connected') || errorMessage.includes('Google token')) {
+        toast.error('Please connect your Google account in Settings to use calendar features');
+      } else {
+        toast.error(errorMessage);
+      }
     }
   };
 
@@ -165,7 +170,12 @@ export const Calendar = ({ projectId, teamId }: CalendarProps) => {
       toast.success('Marking removed');
       loadEvents();
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to remove marking');
+      const errorMessage = error.response?.data?.error?.message || error.message || 'Failed to remove marking';
+      if (errorMessage.includes('Google account not connected') || errorMessage.includes('Google token')) {
+        toast.error('Please connect your Google account in Settings');
+      } else {
+        toast.error(errorMessage);
+      }
     }
   };
 

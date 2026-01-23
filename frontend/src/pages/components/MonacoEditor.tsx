@@ -48,6 +48,7 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
         color: '',
         position: data.position,
         fileId: file.id,
+        filePath: data.filePath || file.path,
       };
       
       // Check if cursor already exists
@@ -217,6 +218,13 @@ export default function MonacoEditor({ file, onSave, onChange, projectId, roomId
             line: e.position.lineNumber,
             column: e.position.column,
           },
+        });
+        
+        // Also emit file:open to notify others which file we're editing
+        socket.emit('file:open', {
+          roomId,
+          projectId,
+          filePath: file.path,
         });
       }
     });

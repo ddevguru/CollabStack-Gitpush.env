@@ -34,12 +34,21 @@ export const GoogleMeetScheduler = ({ projectId, teamId, onClose }: GoogleMeetSc
       
       if (response.data.success) {
         const { meetUrl } = response.data.data;
-        window.open(meetUrl, '_blank');
-        toast.success('Google Meet created! Opening in new tab...');
-        onClose?.();
+        if (meetUrl) {
+          window.open(meetUrl, '_blank');
+          toast.success('Google Meet created! Opening in new tab...');
+          onClose?.();
+        } else {
+          toast.error('Failed to get Meet URL');
+        }
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to create quick meet');
+      const errorMessage = error.response?.data?.error?.message || error.message || 'Failed to create quick meet';
+      if (errorMessage.includes('Google account not connected') || errorMessage.includes('Google token')) {
+        toast.error('Please connect your Google account in Settings to use Google Meet');
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -79,7 +88,12 @@ export const GoogleMeetScheduler = ({ projectId, teamId, onClose }: GoogleMeetSc
         loadScheduledMeetings();
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Failed to schedule meeting');
+      const errorMessage = error.response?.data?.error?.message || error.message || 'Failed to schedule meeting';
+      if (errorMessage.includes('Google account not connected') || errorMessage.includes('Google token')) {
+        toast.error('Please connect your Google account in Settings to schedule meetings');
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }

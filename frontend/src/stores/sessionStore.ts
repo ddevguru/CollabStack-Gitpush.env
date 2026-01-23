@@ -6,6 +6,7 @@ interface Cursor {
   color: string;
   position: { line: number; column: number };
   fileId: string;
+  filePath?: string;
 }
 
 interface TeamMember {

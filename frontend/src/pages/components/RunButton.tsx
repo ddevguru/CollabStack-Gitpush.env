@@ -75,7 +75,7 @@ export default function RunButton({ file, projectId }: RunButtonProps) {
       // Poll for results
       const pollInterval = setInterval(async () => {
         try {
-          const runResponse = await api.get(`/runs/${runId}`);
+          const runResponse = await api.get(`/runs/${projectId}/${runId}`);
           const run = runResponse.data.data.run;
           
           if (run.status === 'SUCCESS' || run.status === 'ERROR') {

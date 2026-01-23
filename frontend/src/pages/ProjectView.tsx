@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { motion } from 'framer-motion';
@@ -155,8 +155,13 @@ export default function ProjectView() {
         return;
       }
       setProject(response.data.data.project);
-      if (response.data.data.project.files.length > 0) {
-        setSelectedFile(response.data.data.project.files[0]);
+      // Auto-select first non-directory file, or first file if all are directories
+      const files = response.data.data.project.files;
+      if (files.length > 0) {
+        const firstFile = files.find((f: File) => !f.isDirectory) || files[0];
+        if (firstFile) {
+          setSelectedFile(firstFile);
+        }
       }
     } catch (error: any) {
       toast.error('Failed to load project');

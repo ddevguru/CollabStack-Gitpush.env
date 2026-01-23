@@ -14,17 +14,19 @@ export class DriveController {
         throw createError('Unauthorized', 401);
       }
 
-      const { code } = req.body;
+      const { code, redirect_uri } = req.body;
 
       if (!code) {
         throw createError('Authorization code required', 400);
       }
 
-      const result = await driveService.connectAccount(req.userId, code);
+      // Use provided redirect_uri or fallback to env variable
+      const result = await driveService.connectAccount(req.userId, code, redirect_uri);
 
       res.json({
         success: true,
         data: result,
+        message: 'Google account connected successfully! You can now use Drive, Calendar, and Meet features.',
       });
     } catch (error) {
       next(error);

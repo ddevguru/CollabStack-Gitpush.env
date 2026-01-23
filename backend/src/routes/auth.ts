@@ -107,5 +107,43 @@ router.post('/google/callback', async (req: Request, res: Response, next: NextFu
   }
 });
 
+router.post(
+  '/forgot-password',
+  [
+    body('email').isEmail().normalizeEmail(),
+  ],
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        throw createError('Validation failed', 400);
+      }
+      await authController.forgotPassword(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post(
+  '/reset-password',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('otp').isLength({ min: 6, max: 6 }),
+    body('newPassword').isLength({ min: 6 }),
+  ],
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        throw createError('Validation failed', 400);
+      }
+      await authController.resetPassword(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;
 

@@ -60,15 +60,32 @@ export class CompileService {
   }
 
   private async executeWithJudge0(request: ExecuteRequest): Promise<any> {
+    // Judge0 language IDs mapping
     const languageMap: Record<string, number> = {
-      'javascript': 63,
-      'python': 71,
-      'java': 62,
-      'cpp': 54,
-      'c': 50,
+      'javascript': 63,  // Node.js
+      'typescript': 74,  // TypeScript
+      'python': 71,      // Python 3
+      'java': 62,        // Java
+      'cpp': 54,         // C++ (GCC 9.2.0)
+      'c': 50,           // C (GCC 9.2.0)
+      'go': 60,          // Go
+      'rust': 73,        // Rust
+      'php': 68,         // PHP
+      'ruby': 72,        // Ruby
+      'swift': 83,       // Swift
+      'kotlin': 78,      // Kotlin
+      'dart': 69,        // Dart
+      'r': 80,           // R
+      'scala': 81,       // Scala
+      'bash': 46,       // Bash
+      'powershell': 84,  // PowerShell
     };
 
     const languageId = languageMap[request.language.toLowerCase()] || 63;
+
+    if (!this.judge0ApiKey) {
+      throw new Error('Judge0 API key not configured. Please set JUDGE0_API_KEY in .env');
+    }
 
     try {
       const response = await axios.post(

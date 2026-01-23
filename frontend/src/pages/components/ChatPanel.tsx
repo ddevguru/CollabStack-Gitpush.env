@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { getSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/authStore';
-import { Send, Phone, PhoneOff, Mic, MicOff, Volume2, X, Bot, Share2, MessageCircle } from 'lucide-react';
+import { Send, Phone, PhoneOff, Mic, MicOff, Volume2, X, Bot, Share2, MessageCircle, Play, Pause, Activity } from 'lucide-react';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
 
 interface ChatPanelProps {
   projectId: string;
@@ -545,6 +546,94 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
     }
   };
 
+  // Voice Note Player Component
+  const VoiceNotePlayer = ({ audioData, duration, userName, isOwn }: { audioData: string; duration: number; userName: string; isOwn: boolean }) => {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+      const audio = voiceAudioRef.current;
+      if (!audio) return;
+
+      const updateTime = () => setCurrentTime(audio.currentTime);
+      const handleEnded = () => {
+        setIsPlaying(false);
+        setCurrentTime(0);
+      };
+      const handlePlay = () => setIsPlaying(true);
+      const handlePause = () => setIsPlaying(false);
+
+      audio.addEventListener('timeupdate', updateTime);
+      audio.addEventListener('ended', handleEnded);
+      audio.addEventListener('play', handlePlay);
+      audio.addEventListener('pause', handlePause);
+
+      return () => {
+        audio.removeEventListener('timeupdate', updateTime);
+        audio.removeEventListener('ended', handleEnded);
+        audio.removeEventListener('play', handlePlay);
+        audio.removeEventListener('pause', handlePause);
+      };
+    }, []);
+
+    const togglePlay = () => {
+      const audio = voiceAudioRef.current;
+      if (!audio) return;
+
+      if (isPlaying) {
+        audio.pause();
+      } else {
+        audio.play().catch(console.error);
+      }
+    };
+
+    const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+    return (
+      <div className="flex items-center gap-3 min-w-[200px] max-w-[280px]">
+        <audio ref={voiceAudioRef} src={audioData} preload="metadata" />
+        <button
+          onClick={togglePlay}
+          className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+            isOwn
+              ? 'bg-white/20 hover:bg-white/30 text-white'
+              : 'bg-collab-500/20 hover:bg-collab-500/30 text-collab-400'
+          }`}
+        >
+          {isPlaying ? (
+            <Pause className="w-5 h-5" />
+          ) : (
+            <Play className="w-5 h-5 ml-0.5" />
+          )}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-gray-300 truncate">
+              {isOwn ? 'You' : userName}
+            </span>
+            <span className="text-xs text-gray-400 ml-2">
+              {Math.floor(currentTime)}s / {Math.round(duration)}s
+            </span>
+          </div>
+          <div className="relative h-1.5 bg-gray-700/50 rounded-full overflow-hidden">
+            <motion.div
+              className={`absolute top-0 left-0 h-full rounded-full ${
+                isOwn ? 'bg-white/40' : 'bg-collab-400'
+              }`}
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.1 }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Activity className="w-full h-full text-gray-600/30" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const shareCodeToWhatsApp = async () => {
     try {
       // Try to get selected text first
@@ -582,26 +671,35 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
 
   return (
     <div className="flex flex-col h-full bg-dark-surface/95 backdrop-blur-xl">
-      <div className="p-4 border-b border-gray-700/50 bg-gray-800/30 flex items-center justify-between">
-        <h3 className="text-lg font-bold text-white bg-gradient-to-r from-collab-400 to-pink-400 bg-clip-text text-transparent">
-          Chat
-        </h3>
+      <div className="p-4 border-b border-gray-700/50 bg-gradient-to-r from-gray-800/40 to-gray-900/60 backdrop-blur-sm flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-collab-500 to-pink-500 flex items-center justify-center">
+            <MessageCircle className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Chat</h3>
+            <p className="text-xs text-gray-400">Collaborate in real-time</p>
+          </div>
+        </div>
         <div className="flex gap-2">
           <button
             onClick={isListening ? stopVoiceAssistant : startVoiceAssistant}
-            className={`p-2 rounded-lg transition-all ${
+            className={`p-2.5 rounded-xl transition-all relative ${
               isListening
-                ? 'bg-green-500 text-white animate-pulse'
-                : 'text-gray-400 hover:bg-gray-700/50 hover:text-collab-400'
+                ? 'bg-green-500 text-white shadow-lg shadow-green-500/50 animate-pulse'
+                : 'text-gray-400 hover:bg-gray-700/50 hover:text-green-400 hover:shadow-md'
             }`}
             title="AI Voice Assistant"
           >
             <Bot className="w-5 h-5" />
+            {isListening && (
+              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full animate-ping"></div>
+            )}
           </button>
           {!isInCall ? (
             <button
               onClick={startVoiceCall}
-              className="p-2 text-collab-400 hover:bg-gray-700/50 rounded-lg transition-all"
+              className="p-2.5 text-collab-400 hover:bg-gray-700/50 rounded-xl transition-all hover:shadow-md hover:shadow-collab-500/30"
               title="Start Voice Call"
             >
               <Phone className="w-5 h-5" />
@@ -609,7 +707,7 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
           ) : (
             <button
               onClick={endCall}
-              className="p-2 text-red-400 hover:bg-gray-700/50 rounded-lg transition-all"
+              className="p-2.5 text-red-400 hover:bg-gray-700/50 rounded-xl transition-all hover:shadow-md hover:shadow-red-500/30 animate-pulse"
               title="End Call"
             >
               <PhoneOff className="w-5 h-5" />
@@ -617,10 +715,10 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
           )}
           <button
             onClick={shareCodeToWhatsApp}
-            className="p-2 text-green-400 hover:bg-gray-700/50 rounded-lg transition-all"
+            className="p-2.5 text-green-400 hover:bg-gray-700/50 rounded-xl transition-all hover:shadow-md hover:shadow-green-500/30"
             title="Share Code to WhatsApp"
           >
-            <MessageCircle className="w-5 h-5" />
+            <Share2 className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -643,12 +741,28 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
       )}
 
       {isRecording && (
-        <div className="p-2 bg-red-500/20 border-b border-red-500/50 flex items-center justify-center gap-2">
-          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-          <span className="text-sm text-red-400">
-            Recording... {Math.floor(recordingDuration)}s
-          </span>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-3 bg-gradient-to-r from-red-500/20 to-pink-500/20 border-b border-red-500/30 flex items-center justify-center gap-3 backdrop-blur-sm"
+        >
+          <div className="relative">
+            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+            <div className="absolute inset-0 w-3 h-3 bg-red-500 rounded-full animate-ping opacity-75"></div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-red-400 animate-pulse" />
+            <span className="text-sm font-medium text-red-400">
+              Recording... {Math.floor(recordingDuration)}s
+            </span>
+          </div>
+          <button
+            onClick={stopRecording}
+            className="ml-2 px-3 py-1 bg-red-500/30 hover:bg-red-500/40 text-red-200 rounded-lg text-xs transition-all"
+          >
+            Stop
+          </button>
+        </motion.div>
       )}
 
       {isListening && (
@@ -658,73 +772,88 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900/30">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-gray-900/20 to-gray-900/40">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-collab-400"></div>
           </div>
         ) : messages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-400">
-            <div className="text-center">
-              <p>No messages yet. Start the conversation!</p>
-              <p className="text-xs mt-2 text-gray-500">Type /help for commands or click the bot icon for voice assistant</p>
+            <div className="text-center max-w-xs">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-collab-500/20 to-pink-500/20 flex items-center justify-center">
+                <MessageCircle className="w-8 h-8 text-collab-400 opacity-50" />
+              </div>
+              <p className="text-sm font-medium mb-1">No messages yet</p>
+              <p className="text-xs text-gray-500">Start the conversation!</p>
+              <p className="text-xs mt-3 text-gray-600">💡 Type /help for commands</p>
+              <p className="text-xs text-gray-600">🎤 Click bot icon for voice assistant</p>
             </div>
           </div>
         ) : (
           messages.map((msg, index) => (
-            <div
+            <motion.div
               key={index}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
               className={`flex ${msg.userId === user?.id ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-xs px-4 py-2 rounded-lg ${
+                className={`max-w-xs px-4 py-3 rounded-2xl transition-all hover:shadow-lg ${
                   msg.userId === 'system' || msg.isCommand
-                    ? 'bg-gray-800/70 text-gray-300 border border-gray-700/50'
+                    ? 'bg-gray-800/80 text-gray-300 border border-gray-700/50 backdrop-blur-sm'
                     : msg.isAction
-                    ? 'bg-gray-800/30 text-gray-400 italic'
+                    ? 'bg-gray-800/30 text-gray-400 italic border border-gray-700/30'
                     : msg.userId === user?.id
-                    ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/50'
-                    : 'bg-gray-800/50 text-gray-200 border border-gray-700/50'
+                    ? 'bg-gradient-to-r from-collab-500 to-pink-500 text-white shadow-lg shadow-collab-500/30 backdrop-blur-sm'
+                    : 'bg-gray-800/60 text-gray-200 border border-gray-700/50 backdrop-blur-sm'
                 }`}
               >
                 {msg.userId !== user?.id && msg.userId !== 'system' && (
-                  <div className="text-xs font-semibold mb-1 text-collab-400">{msg.userName}</div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-collab-400 to-pink-400 flex items-center justify-center text-[10px] font-bold text-white">
+                      {msg.userName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="text-xs font-semibold text-collab-400">{msg.userName}</div>
+                  </div>
                 )}
                 {msg.type === 'voice_note' && msg.audioData ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => playVoiceNote(msg.audioData!)}
-                      className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-all"
-                    >
-                      <Volume2 className="w-4 h-4" />
-                    </button>
-                    <span className="text-xs">{msg.duration ? `${Math.round(msg.duration)}s` : 'Voice note'}</span>
-                  </div>
+                  <VoiceNotePlayer 
+                    audioData={msg.audioData} 
+                    duration={msg.duration || 0}
+                    userName={msg.userName}
+                    isOwn={msg.userId === user?.id}
+                  />
                 ) : (
                   <div className={`text-sm ${msg.isAction ? 'italic' : ''} whitespace-pre-wrap`}>
                     {msg.message}
                   </div>
                 )}
-                <div className="text-xs opacity-70 mt-1">
-                  {new Date(msg.timestamp).toLocaleTimeString()}
+                <div className={`text-xs mt-2 flex items-center gap-1 ${
+                  msg.userId === user?.id ? 'text-white/70' : 'text-gray-400'
+                }`}>
+                  <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  {msg.userId === user?.id && (
+                    <span className="ml-1">✓</span>
+                  )}
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t border-gray-700/50 bg-gray-800/30">
-        <div className="flex space-x-2">
-          <div className="flex items-center gap-2 flex-1">
+      <div className="p-4 border-t border-gray-700/50 bg-gradient-to-b from-gray-800/40 to-gray-900/60 backdrop-blur-sm">
+        <div className="flex items-end gap-2">
+          <div className="flex-1 relative">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type a message or /help for commands..."
-              className="flex-1 px-3 py-2 border border-gray-700/50 rounded-lg bg-gray-800/50 text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-collab-500 focus:border-transparent"
+              placeholder="Type a message..."
+              className="w-full px-4 py-3 pr-12 border border-gray-700/50 rounded-xl bg-gray-800/60 text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-collab-500/50 focus:border-collab-500/50 transition-all backdrop-blur-sm"
             />
             <button
               onMouseDown={startRecording}
@@ -732,10 +861,10 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
               onMouseLeave={stopRecording}
               onTouchStart={startRecording}
               onTouchEnd={stopRecording}
-              className={`p-2 rounded-lg transition-all ${
+              className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${
                 isRecording
-                  ? 'bg-red-500 text-white animate-pulse'
-                  : 'text-gray-400 hover:bg-gray-700/50 hover:text-collab-400'
+                  ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50'
+                  : 'text-gray-400 hover:bg-gray-700/50 hover:text-red-400'
               }`}
               title="Hold to record voice note"
             >
@@ -744,13 +873,29 @@ export default function ChatPanel({ projectId, roomId }: ChatPanelProps) {
           </div>
           <button
             onClick={handleSend}
-            className="px-4 py-2 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-lg hover:shadow-lg hover:shadow-collab-500/50 transition-all"
+            disabled={!input.trim()}
+            className="px-5 py-3 bg-gradient-to-r from-collab-500 to-pink-500 text-white rounded-xl hover:shadow-lg hover:shadow-collab-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-5 h-5" />
           </button>
         </div>
-        <div className="mt-2 text-xs text-gray-500">
-          Commands: /help, /clear, /users, /me [action], /gif [query] | Voice: Click bot icon
+        <div className="mt-3 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-4 text-gray-500">
+            <span className="flex items-center gap-1">
+              <span className="text-collab-400">/</span>help
+            </span>
+            <span className="flex items-center gap-1">
+              <Mic className="w-3 h-3" />
+              Voice note
+            </span>
+            <span className="flex items-center gap-1">
+              <Bot className="w-3 h-3" />
+              AI Assistant
+            </span>
+          </div>
+          <div className="text-gray-600">
+            {messages.length} {messages.length === 1 ? 'message' : 'messages'}
+          </div>
         </div>
       </div>
 

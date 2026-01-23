@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
 import {
-  Square, Circle, Type, Move, PenTool, Layers, Save, Download, Upload,
-  Trash2, Copy, Undo, Redo, Palette, Minus, Plus, Grid, Lock, Unlock, Users, X
+  Square, Circle, Type, Move, PenTool, Layers, Save, Download,
+  Trash2, Copy, Undo, Redo, Minus, Plus, Grid, Lock, Users, X,
+  AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
+  Group, Ungroup, RotateCw, FlipHorizontal, FlipVertical, Maximize2,
+  Image as ImageIcon, FileText, FileDown, Eye, EyeOff, CornerDownRight
 } from 'lucide-react';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -17,7 +19,7 @@ interface DesignCanvasProps {
 
 interface Shape {
   id: string;
-  type: 'rectangle' | 'circle' | 'line' | 'text';
+  type: 'rectangle' | 'circle' | 'line' | 'text' | 'polygon' | 'star' | 'arrow';
   x: number;
   y: number;
   width: number;
@@ -25,10 +27,18 @@ interface Shape {
   fill: string;
   stroke: string;
   strokeWidth: number;
+  opacity?: number;
+  borderRadius?: number;
+  rotation?: number;
   text?: string;
   fontSize?: number;
   fontFamily?: string;
+  fontWeight?: 'normal' | 'bold';
+  fontStyle?: 'normal' | 'italic';
+  textAlign?: 'left' | 'center' | 'right';
   locked?: boolean;
+  visible?: boolean;
+  groupId?: string;
   zIndex: number;
 }
 
@@ -46,15 +56,20 @@ export default function DesignCanvas({ projectId, designId, onClose }: DesignCan
   const [fillColor, setFillColor] = useState('#3b82f6');
   const [strokeColor, setStrokeColor] = useState('#000000');
   const [strokeWidth, setStrokeWidth] = useState(2);
+  const [opacity, setOpacity] = useState(100);
+  const [borderRadius, setBorderRadius] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [snapToGrid, setSnapToGrid] = useState(true);
   const [history, setHistory] = useState<Shape[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showLayers, setShowLayers] = useState(true);
   const [gridVisible, setGridVisible] = useState(true);
   const [textInput, setTextInput] = useState('');
   const [showTextInput, setShowTextInput] = useState(false);
+  const [selectedShapes, setSelectedShapes] = useState<string[]>([]);
+  const [groups, setGroups] = useState<Map<string, string[]>>(new Map());
   const textInputRef = useRef<HTMLInputElement>(null);
   const socket = getSocket();
   const { user } = useAuthStore();
@@ -210,10 +225,38 @@ export default function DesignCanvas({ projectId, designId, onClose }: DesignCan
           ctx.setLineDash([]);
         }
 
+        // Apply opacity
+        ctx.globalAlpha = shape.opacity !== undefined ? shape.opacity : 1;
+        
+        // Skip if not visible
+        if (shape.visible === false) {
+          ctx.globalAlpha = 1;
+          ctx.restore();
+          return;
+        }
+
         switch (shape.type) {
           case 'rectangle':
-            ctx.fillRect(shape.x, shape.y, shape.width, shape.height);
-            ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+            if (shape.borderRadius && shape.borderRadius > 0) {
+              // Rounded rectangle
+              const r = Math.min(shape.borderRadius, shape.width / 2, shape.height / 2);
+              ctx.beginPath();
+              ctx.moveTo(shape.x + r, shape.y);
+              ctx.lineTo(shape.x + shape.width - r, shape.y);
+              ctx.quadraticCurveTo(shape.x + shape.width, shape.y, shape.x + shape.width, shape.y + r);
+              ctx.lineTo(shape.x + shape.width, shape.y + shape.height - r);
+              ctx.quadraticCurveTo(shape.x + shape.width, shape.y + shape.height, shape.x + shape.width - r, shape.y + shape.height);
+              ctx.lineTo(shape.x + r, shape.y + shape.height);
+              ctx.quadraticCurveTo(shape.x, shape.y + shape.height, shape.x, shape.y + shape.height - r);
+              ctx.lineTo(shape.x, shape.y + r);
+              ctx.quadraticCurveTo(shape.x, shape.y, shape.x + r, shape.y);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            } else {
+              ctx.fillRect(shape.x, shape.y, shape.width, shape.height);
+              ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+            }
             break;
           case 'circle':
             ctx.beginPath();
@@ -234,11 +277,14 @@ export default function DesignCanvas({ projectId, designId, onClose }: DesignCan
             ctx.stroke();
             break;
           case 'text':
-            ctx.font = `${shape.fontSize || 16}px ${shape.fontFamily || 'Arial'}`;
+            ctx.font = `${shape.fontStyle === 'italic' ? 'italic ' : ''}${shape.fontWeight === 'bold' ? 'bold ' : ''}${shape.fontSize || 16}px ${shape.fontFamily || 'Arial'}`;
             ctx.fillStyle = shape.fill;
+            ctx.textAlign = (shape.textAlign || 'left') as CanvasTextAlign;
             ctx.fillText(shape.text || '', shape.x, shape.y + (shape.fontSize || 16));
             break;
         }
+        
+        ctx.globalAlpha = 1;
 
         ctx.setLineDash([]);
       });
@@ -380,16 +426,33 @@ export default function DesignCanvas({ projectId, designId, onClose }: DesignCan
 
   const handleMouseUp = () => {
     if (isDrawing && tool !== 'pen') {
+      let x = Math.min(startPos.x, currentPos.x);
+      let y = Math.min(startPos.y, currentPos.y);
+      let width = Math.abs(currentPos.x - startPos.x);
+      let height = Math.abs(currentPos.y - startPos.y);
+
+      // Snap to grid
+      if (snapToGrid) {
+        const gridSize = 10;
+        x = Math.round(x / gridSize) * gridSize;
+        y = Math.round(y / gridSize) * gridSize;
+        width = Math.round(width / gridSize) * gridSize;
+        height = Math.round(height / gridSize) * gridSize;
+      }
+
       const newShape: Shape = {
         id: Date.now().toString(),
         type: tool === 'rectangle' ? 'rectangle' : tool === 'circle' ? 'circle' : 'line',
-        x: Math.min(startPos.x, currentPos.x),
-        y: Math.min(startPos.y, currentPos.y),
-        width: Math.abs(currentPos.x - startPos.x),
-        height: Math.abs(currentPos.y - startPos.y),
+        x,
+        y,
+        width: Math.max(width, 10),
+        height: Math.max(height, 10),
         fill: fillColor,
         stroke: strokeColor,
         strokeWidth,
+        opacity: opacity / 100,
+        borderRadius: tool === 'rectangle' ? borderRadius : 0,
+        visible: true,
         zIndex: shapes.length,
       };
 
@@ -427,6 +490,11 @@ export default function DesignCanvas({ projectId, designId, onClose }: DesignCan
         text: textInput,
         fontSize: 16,
         fontFamily: 'Arial',
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        textAlign: 'left',
+        opacity: opacity / 100,
+        visible: true,
         zIndex: shapes.length,
       };
       const newShapes = [...shapes, newShape];
@@ -541,30 +609,112 @@ export default function DesignCanvas({ projectId, designId, onClose }: DesignCan
     }
   };
 
-  const exportAsImage = () => {
+  const exportAsImage = (format: 'png' | 'jpg' | 'svg' = 'png') => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const link = document.createElement('a');
-    link.download = `design-${Date.now()}.png`;
-    link.href = canvas.toDataURL();
-    link.click();
+    if (format === 'svg') {
+      // Export as SVG
+      let svg = `<svg width="${canvas.width}" height="${canvas.height}" xmlns="http://www.w3.org/2000/svg">`;
+      shapes.forEach((shape) => {
+        if (shape.visible === false) return;
+        switch (shape.type) {
+          case 'rectangle':
+            svg += `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" fill="${shape.fill}" stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" rx="${shape.borderRadius || 0}" opacity="${shape.opacity || 1}"/>`;
+            break;
+          case 'circle':
+            svg += `<circle cx="${shape.x + shape.width / 2}" cy="${shape.y + shape.height / 2}" r="${Math.min(shape.width, shape.height) / 2}" fill="${shape.fill}" stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" opacity="${shape.opacity || 1}"/>`;
+            break;
+          case 'line':
+            svg += `<line x1="${shape.x}" y1="${shape.y}" x2="${shape.x + shape.width}" y2="${shape.y + shape.height}" stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" opacity="${shape.opacity || 1}"/>`;
+            break;
+          case 'text':
+            svg += `<text x="${shape.x}" y="${shape.y + (shape.fontSize || 16)}" fill="${shape.fill}" font-size="${shape.fontSize || 16}" font-family="${shape.fontFamily || 'Arial'}" font-weight="${shape.fontWeight || 'normal'}" font-style="${shape.fontStyle || 'normal'}" text-anchor="${shape.textAlign || 'left'}" opacity="${shape.opacity || 1}">${(shape.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>`;
+            break;
+        }
+      });
+      svg += '</svg>';
+      const blob = new Blob([svg], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = `design-${Date.now()}.svg`;
+      link.href = url;
+      link.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const link = document.createElement('a');
+      link.download = `design-${Date.now()}.${format}`;
+      link.href = canvas.toDataURL(`image/${format === 'jpg' ? 'jpeg' : format}`, 0.95);
+      link.click();
+    }
+  };
+
+  // Align functions
+  const alignShapes = (direction: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+    if (!selectedShape) return;
+    
+    const shape = shapes.find(s => s.id === selectedShape);
+    if (!shape) return;
+    
+    // Align to canvas
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const updates: Partial<Shape> = {};
+    switch (direction) {
+      case 'left': updates.x = 0; break;
+      case 'center': updates.x = (canvas.width / zoom - shape.width) / 2; break;
+      case 'right': updates.x = canvas.width / zoom - shape.width; break;
+      case 'top': updates.y = 0; break;
+      case 'middle': updates.y = (canvas.height / zoom - shape.height) / 2; break;
+      case 'bottom': updates.y = canvas.height / zoom - shape.height; break;
+    }
+    
+    const newShapes = shapes.map(s => s.id === selectedShape ? { ...s, ...updates } : s);
+    setShapes(newShapes);
+    saveToHistory(newShapes);
+    
+    // Broadcast update
+    if (socket && designId) {
+      socket.emit('design:shape:update', {
+        designId,
+        shapeId: selectedShape,
+        updates,
+      });
+    }
+  };
+
+  const updateSelectedShape = (updates: Partial<Shape>) => {
+    if (!selectedShape) return;
+    const newShapes = shapes.map(s => s.id === selectedShape ? { ...s, ...updates } : s);
+    setShapes(newShapes);
+    saveToHistory(newShapes);
+    
+    // Broadcast update
+    if (socket && designId) {
+      socket.emit('design:shape:update', {
+        designId,
+        shapeId: selectedShape,
+        updates,
+      });
+    }
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between p-3 bg-gray-800 border-b border-gray-700">
-        <div className="flex items-center gap-4">
+    <div className="flex flex-col h-full bg-[#1a1a1a] text-white">
+      {/* Top Toolbar - Figma Style */}
+      <div className="h-12 bg-[#2c2c2c] border-b border-[#3a3a3a] flex items-center justify-between px-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          {/* Collaborators */}
           {collaborators.length > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/50 rounded-lg border border-gray-600">
-              <Users className="w-4 h-4 text-collab-400" />
-              <span className="text-sm text-gray-300 font-medium">{collaborators.length}</span>
-              <div className="flex -space-x-2">
+            <div className="flex items-center gap-2 px-2 py-1 bg-[#363636] rounded-md border border-[#4a4a4a]">
+              <Users className="w-3.5 h-3.5 text-collab-400" />
+              <span className="text-xs font-medium text-gray-300">{collaborators.length}</span>
+              <div className="flex -space-x-1.5">
                 {collaborators.slice(0, 3).map((collab) => (
                   <div
                     key={collab.userId}
-                    className="w-6 h-6 rounded-full bg-gradient-to-br from-collab-500 to-pink-500 flex items-center justify-center text-white text-xs font-semibold border-2 border-gray-800"
+                    className="w-5 h-5 rounded-full bg-gradient-to-br from-collab-500 to-pink-500 flex items-center justify-center text-white text-[10px] font-semibold border-2 border-[#2c2c2c]"
                     title={collab.userName}
                   >
                     {collab.userName[0].toUpperCase()}
@@ -573,99 +723,206 @@ export default function DesignCanvas({ projectId, designId, onClose }: DesignCan
               </div>
             </div>
           )}
-          <div className="flex items-center gap-2">
+          
+          {/* Tool Separator */}
+          <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
+          
+          {/* Tools */}
+          <div className="flex items-center gap-1 bg-[#363636] rounded-md p-1">
             <button
               onClick={() => setTool('select')}
-              className={`p-2 rounded ${tool === 'select' ? 'bg-collab-500' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors`}
-              title="Select"
+              className={`p-1.5 rounded ${tool === 'select' ? 'bg-[#4a4a4a] text-white' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
+              title="Select (V)"
             >
-              <Move className="w-5 h-5" />
+              <Move className="w-4 h-4" />
             </button>
-          <button
-            onClick={() => setTool('rectangle')}
-            className={`p-2 rounded ${tool === 'rectangle' ? 'bg-collab-500' : 'bg-gray-700'} text-white`}
-            title="Rectangle"
-          >
-            <Square className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setTool('circle')}
-            className={`p-2 rounded ${tool === 'circle' ? 'bg-collab-500' : 'bg-gray-700'} text-white`}
-            title="Circle"
-          >
-            <Circle className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setTool('line')}
-            className={`p-2 rounded ${tool === 'line' ? 'bg-collab-500' : 'bg-gray-700'} text-white`}
-            title="Line"
-          >
-            <Minus className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setTool('text')}
-            className={`p-2 rounded ${tool === 'text' ? 'bg-collab-500' : 'bg-gray-700'} text-white`}
-            title="Text"
-          >
-            <Type className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setTool('pen')}
-            className={`p-2 rounded ${tool === 'pen' ? 'bg-collab-500' : 'bg-gray-700'} text-white`}
-            title="Pen"
-          >
-            <PenTool className="w-5 h-5" />
-          </button>
+            <button
+              onClick={() => setTool('rectangle')}
+              className={`p-1.5 rounded ${tool === 'rectangle' ? 'bg-[#4a4a4a] text-white' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
+              title="Rectangle (R)"
+            >
+              <Square className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setTool('circle')}
+              className={`p-1.5 rounded ${tool === 'circle' ? 'bg-[#4a4a4a] text-white' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
+              title="Circle (O)"
+            >
+              <Circle className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setTool('line')}
+              className={`p-1.5 rounded ${tool === 'line' ? 'bg-[#4a4a4a] text-white' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
+              title="Line (L)"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setTool('text')}
+              className={`p-1.5 rounded ${tool === 'text' ? 'bg-[#4a4a4a] text-white' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
+              title="Text (T)"
+            >
+              <Type className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setTool('pen')}
+              className={`p-1.5 rounded ${tool === 'pen' ? 'bg-[#4a4a4a] text-white' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
+              title="Pen (P)"
+            >
+              <PenTool className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
+        {/* Right Actions */}
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-[#363636] rounded-md p-1">
+            <button
+              onClick={undo}
+              disabled={historyIndex < 0}
+              className={`p-1.5 rounded ${historyIndex >= 0 ? 'text-gray-400 hover:text-white hover:bg-[#404040]' : 'text-gray-600 cursor-not-allowed'} transition-all`}
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo className="w-4 h-4" />
+            </button>
+            <button
+              onClick={redo}
+              disabled={historyIndex >= history.length - 1}
+              className={`p-1.5 rounded ${historyIndex < history.length - 1 ? 'text-gray-400 hover:text-white hover:bg-[#404040]' : 'text-gray-600 cursor-not-allowed'} transition-all`}
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              <Redo className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
+          
+          {/* Align Tools */}
+          {selectedShape && (
+            <>
+              <div className="flex items-center gap-0.5 bg-[#363636] rounded-md p-1">
+                <button
+                  onClick={() => alignShapes('left')}
+                  className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#404040] transition-all"
+                  title="Align Left"
+                >
+                  <AlignLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => alignShapes('center')}
+                  className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#404040] transition-all"
+                  title="Align Center"
+                >
+                  <AlignCenter className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => alignShapes('right')}
+                  className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#404040] transition-all"
+                  title="Align Right"
+                >
+                  <AlignRight className="w-3.5 h-3.5" />
+                </button>
+                <div className="w-px h-4 bg-[#3a3a3a] mx-0.5" />
+                <button
+                  onClick={() => alignShapes('top')}
+                  className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#404040] transition-all"
+                  title="Align Top"
+                >
+                  <AlignVerticalJustifyStart className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => alignShapes('middle')}
+                  className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#404040] transition-all"
+                  title="Align Middle"
+                >
+                  <AlignVerticalJustifyCenter className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => alignShapes('bottom')}
+                  className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#404040] transition-all"
+                  title="Align Bottom"
+                >
+                  <AlignVerticalJustifyEnd className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
+            </>
+          )}
+          
+          {/* Snap to Grid Toggle */}
           <button
-            onClick={undo}
-            className="p-2 rounded bg-gray-700 text-white hover:bg-gray-600"
-            title="Undo"
+            onClick={() => setSnapToGrid(!snapToGrid)}
+            className={`p-1.5 rounded ${snapToGrid ? 'bg-[#4a4a4a] text-collab-400' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
+            title="Snap to Grid"
           >
-            <Undo className="w-4 h-4" />
+            <CornerDownRight className="w-4 h-4" />
           </button>
-          <button
-            onClick={redo}
-            className="p-2 rounded bg-gray-700 text-white hover:bg-gray-600"
-            title="Redo"
-          >
-            <Redo className="w-4 h-4" />
-          </button>
+          
           <button
             onClick={() => setGridVisible(!gridVisible)}
-            className={`p-2 rounded ${gridVisible ? 'bg-collab-500' : 'bg-gray-700'} text-white`}
+            className={`p-1.5 rounded ${gridVisible ? 'bg-[#4a4a4a] text-collab-400' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
             title="Toggle Grid"
           >
             <Grid className="w-4 h-4" />
           </button>
+          
           <button
             onClick={() => setShowLayers(!showLayers)}
-            className={`p-2 rounded ${showLayers ? 'bg-collab-500' : 'bg-gray-700'} text-white`}
-            title="Layers"
+            className={`p-1.5 rounded ${showLayers ? 'bg-[#4a4a4a] text-collab-400' : 'text-gray-400 hover:text-white hover:bg-[#404040]'} transition-all`}
+            title="Layers Panel"
           >
             <Layers className="w-4 h-4" />
           </button>
+          
+          <div className="w-px h-6 bg-[#3a3a3a] mx-1" />
+          
           <button
             onClick={saveDesign}
-            className="p-2 rounded bg-green-600 text-white hover:bg-green-700"
-            title="Save"
+            className="px-3 py-1.5 bg-collab-500 hover:bg-collab-600 text-white rounded-md text-sm font-medium transition-all flex items-center gap-1.5"
+            title="Save Design"
           >
-            <Save className="w-4 h-4" />
+            <Save className="w-3.5 h-3.5" />
+            <span>Save</span>
           </button>
-          <button
-            onClick={exportAsImage}
-            className="p-2 rounded bg-gray-700 text-white hover:bg-gray-600"
-            title="Export"
-          >
-            <Download className="w-4 h-4" />
-          </button>
+          
+          {/* Export Dropdown */}
+          <div className="relative group">
+            <button
+              className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#404040] transition-all"
+              title="Export"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+            <div className="absolute right-0 top-full mt-1 bg-[#363636] border border-[#4a4a4a] rounded-md shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 min-w-[120px]">
+              <button
+                onClick={() => exportAsImage('png')}
+                className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-[#404040] flex items-center gap-2"
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                PNG
+              </button>
+              <button
+                onClick={() => exportAsImage('jpg')}
+                className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-[#404040] flex items-center gap-2"
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                JPG
+              </button>
+              <button
+                onClick={() => exportAsImage('svg')}
+                className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-[#404040] flex items-center gap-2"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                SVG
+              </button>
+            </div>
+          </div>
+          
           {onClose && (
             <button
               onClick={onClose}
-              className="p-2 rounded bg-red-600 text-white hover:bg-red-700"
+              className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#404040] transition-all ml-1"
+              title="Close"
             >
               <X className="w-4 h-4" />
             </button>
@@ -674,129 +931,327 @@ export default function DesignCanvas({ projectId, designId, onClose }: DesignCan
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <div className="w-64 bg-gray-800 border-r border-gray-700 p-4 overflow-y-auto">
-          {/* Color Picker */}
+        {/* Left Sidebar - Properties Panel */}
+        <div className="w-64 bg-[#252525] border-r border-[#3a3a3a] flex flex-col flex-shrink-0">
+          {/* Properties Header */}
+          <div className="h-10 border-b border-[#3a3a3a] flex items-center px-4 bg-[#2c2c2c]">
+            <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Properties</span>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4">
+          {/* Fill Color */}
           <div className="mb-4">
-            <label className="text-sm text-gray-300 mb-2 block">Fill Color</label>
+            <label className="text-xs font-medium text-gray-400 mb-2 block uppercase tracking-wider">Fill</label>
             <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={fillColor}
-                onChange={(e) => setFillColor(e.target.value)}
-                className="w-10 h-10 rounded cursor-pointer"
-              />
+              <div className="relative">
+                <input
+                  type="color"
+                  value={fillColor}
+                  onChange={(e) => setFillColor(e.target.value)}
+                  className="w-10 h-10 rounded cursor-pointer border-2 border-[#3a3a3a]"
+                />
+              </div>
               <input
                 type="text"
                 value={fillColor}
                 onChange={(e) => setFillColor(e.target.value)}
-                className="flex-1 px-2 py-1 bg-gray-700 text-white rounded text-sm"
+                className="flex-1 px-3 py-2 bg-[#363636] border border-[#3a3a3a] text-white rounded text-sm focus:outline-none focus:border-collab-500"
+                placeholder="#000000"
               />
             </div>
           </div>
 
+          {/* Stroke */}
           <div className="mb-4">
-            <label className="text-sm text-gray-300 mb-2 block">Stroke Color</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={strokeColor}
-                onChange={(e) => setStrokeColor(e.target.value)}
-                className="w-10 h-10 rounded cursor-pointer"
-              />
+            <label className="text-xs font-medium text-gray-400 mb-2 block uppercase tracking-wider">Stroke</label>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="relative">
+                <input
+                  type="color"
+                  value={strokeColor}
+                  onChange={(e) => setStrokeColor(e.target.value)}
+                  className="w-10 h-10 rounded cursor-pointer border-2 border-[#3a3a3a]"
+                />
+              </div>
               <input
                 type="text"
                 value={strokeColor}
                 onChange={(e) => setStrokeColor(e.target.value)}
-                className="flex-1 px-2 py-1 bg-gray-700 text-white rounded text-sm"
+                className="flex-1 px-3 py-2 bg-[#363636] border border-[#3a3a3a] text-white rounded text-sm focus:outline-none focus:border-collab-500"
+                placeholder="#000000"
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min="0"
+                max="20"
+                value={strokeWidth}
+                onChange={(e) => setStrokeWidth(Number(e.target.value))}
+                className="flex-1 h-1.5 bg-[#363636] rounded-lg appearance-none cursor-pointer accent-collab-500"
+              />
+              <span className="text-xs text-gray-400 w-12 text-right">{strokeWidth}px</span>
             </div>
           </div>
 
-          <div className="mb-4">
-            <label className="text-sm text-gray-300 mb-2 block">Stroke Width</label>
-            <input
-              type="range"
-              min="1"
-              max="20"
-              value={strokeWidth}
-              onChange={(e) => setStrokeWidth(Number(e.target.value))}
-              className="w-full"
-            />
-            <span className="text-xs text-gray-400">{strokeWidth}px</span>
-          </div>
+          {/* Opacity */}
+          {selectedShape && (
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-400 mb-2 block uppercase tracking-wider">Opacity</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={shapes.find(s => s.id === selectedShape)?.opacity ? Math.round((shapes.find(s => s.id === selectedShape)?.opacity || 1) * 100) : opacity}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setOpacity(val);
+                    updateSelectedShape({ opacity: val / 100 });
+                  }}
+                  className="flex-1 h-1.5 bg-[#363636] rounded-lg appearance-none cursor-pointer accent-collab-500"
+                />
+                <span className="text-xs text-gray-400 w-12 text-right">{Math.round((shapes.find(s => s.id === selectedShape)?.opacity || 1) * 100)}%</span>
+              </div>
+            </div>
+          )}
+
+          {/* Border Radius (for rectangles) */}
+          {selectedShape && shapes.find(s => s.id === selectedShape)?.type === 'rectangle' && (
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-400 mb-2 block uppercase tracking-wider">Border Radius</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="50"
+                  value={shapes.find(s => s.id === selectedShape)?.borderRadius || borderRadius}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setBorderRadius(val);
+                    updateSelectedShape({ borderRadius: val });
+                  }}
+                  className="flex-1 h-1.5 bg-[#363636] rounded-lg appearance-none cursor-pointer accent-collab-500"
+                />
+                <span className="text-xs text-gray-400 w-12 text-right">{shapes.find(s => s.id === selectedShape)?.borderRadius || 0}px</span>
+              </div>
+            </div>
+          )}
 
           {/* Zoom Controls */}
-          <div className="mb-4">
-            <label className="text-sm text-gray-300 mb-2 block">Zoom</label>
+          <div className="mb-4 pb-4 border-b border-[#3a3a3a]">
+            <label className="text-xs font-medium text-gray-400 mb-2 block uppercase tracking-wider">Zoom</label>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setZoom(Math.max(0.1, zoom - 0.1))}
-                className="p-1 rounded bg-gray-700 text-white"
+                className="p-1.5 rounded bg-[#363636] hover:bg-[#404040] text-gray-400 hover:text-white transition-all"
               >
-                <Minus className="w-4 h-4" />
+                <Minus className="w-3.5 h-3.5" />
               </button>
-              <span className="text-sm text-white flex-1 text-center">{Math.round(zoom * 100)}%</span>
+              <input
+                type="text"
+                value={`${Math.round(zoom * 100)}%`}
+                readOnly
+                className="flex-1 px-3 py-1.5 bg-[#363636] border border-[#3a3a3a] text-white rounded text-sm text-center"
+              />
               <button
                 onClick={() => setZoom(Math.min(3, zoom + 0.1))}
-                className="p-1 rounded bg-gray-700 text-white"
+                className="p-1.5 rounded bg-[#363636] hover:bg-[#404040] text-gray-400 hover:text-white transition-all"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setZoom(1)}
+                className="px-2 py-1 text-xs bg-[#363636] hover:bg-[#404040] text-gray-400 hover:text-white rounded transition-all"
+                title="Reset Zoom"
+              >
+                100%
               </button>
             </div>
           </div>
 
           {/* Selected Shape Actions */}
           {selectedShape && (
-            <div className="border-t border-gray-700 pt-4 mt-4">
+            <div className="pt-4 mt-4 border-t border-[#3a3a3a] space-y-2">
               <div className="flex gap-2">
                 <button
                   onClick={duplicateSelected}
-                  className="flex-1 p-2 bg-gray-700 text-white rounded hover:bg-gray-600"
+                  className="flex-1 px-3 py-2 bg-[#363636] hover:bg-[#404040] text-gray-300 hover:text-white rounded text-sm font-medium transition-all flex items-center justify-center gap-1.5"
+                  title="Duplicate (Ctrl+D)"
                 >
-                  <Copy className="w-4 h-4 mx-auto" />
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Duplicate</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const shape = shapes.find(s => s.id === selectedShape);
+                    if (shape) {
+                      updateSelectedShape({ locked: !shape.locked });
+                    }
+                  }}
+                  className={`px-3 py-2 rounded text-sm font-medium transition-all ${
+                    shapes.find(s => s.id === selectedShape)?.locked
+                      ? 'bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30'
+                      : 'bg-[#363636] hover:bg-[#404040] text-gray-300 hover:text-white'
+                  }`}
+                  title="Lock/Unlock"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => {
+                    const shape = shapes.find(s => s.id === selectedShape);
+                    if (shape) {
+                      updateSelectedShape({ visible: shape.visible === false });
+                    }
+                  }}
+                  className={`px-3 py-2 rounded text-sm font-medium transition-all ${
+                    shapes.find(s => s.id === selectedShape)?.visible === false
+                      ? 'bg-gray-600/20 text-gray-400 hover:bg-gray-600/30'
+                      : 'bg-[#363636] hover:bg-[#404040] text-gray-300 hover:text-white'
+                  }`}
+                  title="Show/Hide"
+                >
+                  {shapes.find(s => s.id === selectedShape)?.visible === false ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
                 </button>
                 <button
                   onClick={deleteSelected}
-                  className="flex-1 p-2 bg-red-600 text-white rounded hover:bg-red-700"
+                  className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 rounded text-sm font-medium transition-all"
+                  title="Delete (Delete)"
                 >
-                  <Trash2 className="w-4 h-4 mx-auto" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Layers Panel */}
-          {showLayers && (
-            <div className="border-t border-gray-700 pt-4 mt-4">
-              <h3 className="text-sm font-semibold text-gray-300 mb-2">Layers</h3>
-              <div className="space-y-1 max-h-64 overflow-y-auto">
-                {[...shapes].reverse().map((shape) => (
-                  <div
-                    key={shape.id}
-                    onClick={() => setSelectedShape(shape.id)}
-                    className={`p-2 rounded cursor-pointer ${
-                      selectedShape === shape.id ? 'bg-collab-500' : 'bg-gray-700'
-                    } text-white text-sm`}
+              
+              {/* Text Formatting (for text shapes) */}
+              {shapes.find(s => s.id === selectedShape)?.type === 'text' && (
+                <div className="flex gap-1 pt-2 border-t border-[#3a3a3a]">
+                  <button
+                    onClick={() => {
+                      const shape = shapes.find(s => s.id === selectedShape);
+                      if (shape) {
+                        updateSelectedShape({ fontWeight: shape.fontWeight === 'bold' ? 'normal' : 'bold' });
+                      }
+                    }}
+                    className={`px-2 py-1.5 rounded text-xs font-medium transition-all ${
+                      shapes.find(s => s.id === selectedShape)?.fontWeight === 'bold'
+                        ? 'bg-collab-500/20 text-collab-400'
+                        : 'bg-[#363636] hover:bg-[#404040] text-gray-300'
+                    }`}
+                    title="Bold"
                   >
-                    {shape.type} {shape.id.slice(-4)}
-                  </div>
-                ))}
-              </div>
+                    <strong>B</strong>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const shape = shapes.find(s => s.id === selectedShape);
+                      if (shape) {
+                        updateSelectedShape({ fontStyle: shape.fontStyle === 'italic' ? 'normal' : 'italic' });
+                      }
+                    }}
+                    className={`px-2 py-1.5 rounded text-xs font-medium transition-all ${
+                      shapes.find(s => s.id === selectedShape)?.fontStyle === 'italic'
+                        ? 'bg-collab-500/20 text-collab-400'
+                        : 'bg-[#363636] hover:bg-[#404040] text-gray-300'
+                    }`}
+                    title="Italic"
+                  >
+                    <em>I</em>
+                  </button>
+                  <div className="flex-1" />
+                  <select
+                    value={shapes.find(s => s.id === selectedShape)?.textAlign || 'left'}
+                    onChange={(e) => updateSelectedShape({ textAlign: e.target.value as 'left' | 'center' | 'right' })}
+                    className="px-2 py-1.5 bg-[#363636] border border-[#3a3a3a] text-white rounded text-xs"
+                  >
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </div>
+              )}
             </div>
           )}
+          </div>
         </div>
 
-        {/* Canvas */}
-        <div ref={containerRef} className="flex-1 relative overflow-hidden bg-white">
+        {/* Layers Panel - Right Side */}
+        {showLayers && (
+          <div className="w-64 bg-[#252525] border-l border-[#3a3a3a] flex flex-col flex-shrink-0">
+            <div className="h-10 border-b border-[#3a3a3a] flex items-center justify-between px-4 bg-[#2c2c2c]">
+              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Layers</span>
+              <span className="text-xs text-gray-500">{shapes.length}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {shapes.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  No layers yet
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {[...shapes].reverse().map((shape, index) => (
+                    <div
+                      key={shape.id}
+                      onClick={() => setSelectedShape(shape.id)}
+                      className={`px-3 py-2 rounded cursor-pointer transition-all flex items-center gap-2 ${
+                        selectedShape === shape.id 
+                          ? 'bg-collab-500/20 border border-collab-500/50' 
+                          : 'hover:bg-[#363636]'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded border-2 ${
+                        shape.type === 'rectangle' ? 'border-white' :
+                        shape.type === 'circle' ? 'rounded-full border-white' :
+                        'border-dashed border-white'
+                      }`} style={{ backgroundColor: shape.fill }} />
+                      <span className="text-sm text-gray-300 flex-1 capitalize">
+                        {shape.type} {shapes.length - index}
+                      </span>
+                      {shape.locked && (
+                        <Lock className="w-3.5 h-3.5 text-gray-500" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Canvas - Figma Style */}
+        <div ref={containerRef} className="flex-1 relative overflow-hidden bg-[#f5f5f5]">
+          {/* Canvas Background Pattern */}
+          {gridVisible && (
+            <div 
+              className="absolute inset-0 opacity-30"
+              style={{
+                backgroundImage: `
+                  linear-gradient(to right, #e0e0e0 1px, transparent 1px),
+                  linear-gradient(to bottom, #e0e0e0 1px, transparent 1px)
+                `,
+                backgroundSize: '20px 20px',
+              }}
+            />
+          )}
+          
           <canvas
             ref={canvasRef}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            className="absolute inset-0 cursor-crosshair"
+            className="absolute inset-0"
+            style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}
           />
+          
+          {/* Zoom Indicator */}
+          <div className="absolute bottom-4 right-4 bg-[#2c2c2c]/90 backdrop-blur-sm px-3 py-1.5 rounded-md text-xs text-gray-300 border border-[#3a3a3a]">
+            {Math.round(zoom * 100)}%
+          </div>
           {showTextInput && (
             <input
               ref={textInputRef}

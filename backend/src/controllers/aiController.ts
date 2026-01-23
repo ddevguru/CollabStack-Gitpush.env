@@ -55,7 +55,7 @@ export class AIController {
       const aiResponse = await this.getAIResponse(message, context, project);
 
       // Save conversation
-      await prisma.sessionEvent.create({
+      const conversation = await prisma.sessionEvent.create({
         data: {
           projectId,
           type: 'ai_chat',

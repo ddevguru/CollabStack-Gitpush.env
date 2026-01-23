@@ -175,13 +175,15 @@ export default function UserPresencePanel({ projectId, roomId }: UserPresencePan
                     <span>{getActionText(presence.action)}</span>
                   </div>
                 </div>
-                <div className="text-xs text-gray-400 truncate mb-1" title={presence.filePath}>
-                  <FileText className="w-3 h-3 inline mr-1" />
+                <div className="text-xs text-gray-300 truncate mb-1 font-medium" title={presence.filePath}>
+                  <FileText className="w-3 h-3 inline mr-1 text-collab-400" />
                   {fileName}
                 </div>
                 {presence.line > 0 && (
-                  <div className="text-xs text-gray-500">
-                    Line {presence.line}, Column {presence.column}
+                  <div className="text-xs text-gray-400 flex items-center gap-2">
+                    <span>Line {presence.line}, Col {presence.column}</span>
+                    <span className="text-gray-500">•</span>
+                    <span className="text-collab-400">Active</span>
                   </div>
                 )}
               </div>

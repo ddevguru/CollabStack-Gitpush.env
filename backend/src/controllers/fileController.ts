@@ -234,6 +234,45 @@ export class FileController {
         }
       }
 
+      // Check if Drive auto-sync is enabled and trigger it
+      if (project.driveSyncMode === 'AUTO' && project.driveFolderId) {
+        // Get project with all files for sync
+        const projectFiles = await prisma.file.findMany({
+          where: { projectId },
+        });
+
+        // Get user's Google token
+        const user = await prisma.user.findUnique({
+          where: { id: req.userId },
+          select: { googleToken: true },
+        });
+
+        // Trigger auto-sync to Drive in background (don't wait for it)
+        if (user?.googleToken) {
+          setImmediate(async () => {
+            try {
+              const { DriveService } = await import('../services/driveService.js');
+              const driveService = new DriveService();
+              
+              await driveService.syncProject(
+                user.googleToken!,
+                project.driveFolderId!,
+                projectFiles.map((f: { path: string; content: string; isDirectory: boolean }) => ({ 
+                  path: f.path, 
+                  content: f.content, 
+                  isDirectory: f.isDirectory 
+                })),
+                project.name
+              );
+              console.log(`✅ Auto-synced to Drive: ${project.name}`);
+            } catch (error) {
+              // Silently fail - don't block file save
+              console.error('Auto-sync to Drive failed:', error);
+            }
+          });
+        }
+      }
+
       res.json({
         success: true,
         data: { file: updated },

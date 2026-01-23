@@ -12,9 +12,15 @@ export class DriveService {
   private clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   private redirectUri = process.env.GOOGLE_REDIRECT_URI;
 
-  async connectAccount(userId: string, code: string): Promise<any> {
-    if (!this.clientId || !this.clientSecret || !this.redirectUri) {
+  async connectAccount(userId: string, code: string, redirectUri?: string): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
       throw new Error('Google OAuth not configured');
+    }
+
+    // Use provided redirect_uri or fallback to env variable
+    const redirect_uri = redirectUri || this.redirectUri;
+    if (!redirect_uri) {
+      throw new Error('Redirect URI not provided');
     }
 
     // Exchange code for tokens
@@ -24,7 +30,7 @@ export class DriveService {
         code,
         client_id: this.clientId,
         client_secret: this.clientSecret,
-        redirect_uri: this.redirectUri,
+        redirect_uri: redirect_uri,
         grant_type: 'authorization_code',
       }
     );

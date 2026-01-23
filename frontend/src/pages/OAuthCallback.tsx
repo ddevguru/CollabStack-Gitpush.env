@@ -58,13 +58,18 @@ export default function OAuthCallback() {
           const endpoint = provider === 'github' ? '/github/connect' : '/drive/connect';
           const redirectUri = `${window.location.origin}/auth/${provider}/callback`;
           
-          console.log('Sending GitHub connect request:', {
+          console.log('Sending OAuth connect request:', {
             endpoint,
+            provider,
             hasCode: !!code,
             redirectUri,
           });
           
-          await apiWithToken.post(endpoint, { code, redirect_uri: redirectUri });
+          const response = await apiWithToken.post(endpoint, { code, redirect_uri: redirectUri });
+          
+          if (response.data.message) {
+            toast.success(response.data.message);
+          }
           
           // Update user data in store
           const userResponse = await apiWithToken.get('/users/me');
